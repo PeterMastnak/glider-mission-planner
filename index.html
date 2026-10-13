@@ -315,7 +315,7 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const DEF = { limits: { wind: 15, gust: 20, hs: 2.0, back: "sunset", backT: "18:00", daySample: true, waveLoss: 0, avoidKelp: false },
               energy: { cap: 3.5, solar: 270, hotel: 10, sampler: 30, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50 },
               contacts: { op: "", pi: "", lead: "", comms: "", notes: "" } };
-const S = { mode: "build", kn: 2, cur: "still", base: "dark", date: today, launch: 10, t: 0,
+const S = { mode: "build", kn: 2, cur: "still", base: "ocean", date: today, launch: 10, t: 0,
             route: { id: null, name: "", stops: [] },          // stop: {type: ramp|pin|rx, ref, kind: start|pass|sample|end, dwell (h), prio}
             pins: store.get("rc_pins", []), routes: store.get("rc_routes", []), rampMoves: store.get("rc_ramps", {}),
             limits: { ...DEF.limits, ...store.get("rc_limits", {}) }, energy: { ...DEF.energy, ...store.get("rc_energy", {}) },
@@ -989,8 +989,8 @@ let timer = null; const playBtn = document.getElementById("play");
 playBtn.onclick = () => { if (timer) { clearInterval(timer); timer = null; playBtn.innerHTML = "&#9654;"; return; } if (S.t >= 1) S.t = 0; playBtn.innerHTML = "&#10074;&#10074;";
   timer = setInterval(() => { S.t = Math.min(1, S.t + 0.0025); updateBoat(); if (S.t >= 1) { clearInterval(timer); timer = null; playBtn.innerHTML = "&#9654;"; } }, 30); };
 document.getElementById("theme").onclick = () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === "dark" ? "light" : "dark";
-  if (S.base === "dark" && h.dataset.theme === "light") setBase("ocean"); else if (S.base === "ocean" && h.dataset.theme === "dark") setBase("dark"); render(); };
+  render(); };
 L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
-settingsUI(); buildFree(); layersUI(); setBase("dark"); readLink(); dateEl.value = S.date;
+settingsUI(); buildFree(); layersUI(); setBase("ocean"); readLink(); dateEl.value = S.date;
 (async () => { if (S.cur === "live") await ensureWx(S.date); render(); })();
 </script></body></html>
