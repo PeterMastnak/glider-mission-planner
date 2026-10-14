@@ -257,7 +257,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
         <label class="lbl">Holding position (W)<input class="field" type="number" id="enHold" min="0" step="5"></label>
         <label class="lbl">Route-following overhead (%)<input class="field" type="number" id="xtrack" min="0" max="30" step="1"></label>
       </div>
-      <div class="small">Propulsion: 3.5 kWh per 100 nm at 2 kn (manufacturer), growing with speed&sup2;. Solar follows the sun and the forecast cloud cover (30 % assumed without a forecast). Route-following overhead adds distance for steering around the line and rounding waypoints.</div>
+      <div class="small">Under way: 70 W at 2 kn (manufacturer: 100 nm on 3.5 kWh at cruise, electronics included), scaled with speed&sup3;. Stopped: electronics + holding position (+ sampler while sampling). Solar follows the sun and forecast cloud cover (30 % without a forecast). Sources and caveats under <b>How routes, times and battery are calculated</b>.</div>
     </div></details>
     <details class="grp"><summary>Operator export settings</summary><div class="body">
       <div class="grid2">
@@ -281,7 +281,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div class="row" style="margin-top:8px"><label class="btn">Import route JSON<input type="file" id="imp" accept=".json" hidden></label><label class="btn">Import GPS track (GPX / CSV)<input type="file" id="impTrack" accept=".gpx,.csv,.txt" hidden></label><button class="btn" id="trackBtn" hidden>Track vs plan</button></div></div>
     <div class="sec"><div class="label">Saved routes <span>stored in this browser</span></div><div class="list" id="routes"></div></div>
     <div class="sec"><div class="label">Launch / pickup sites</div><div class="list" id="sites"></div></div>
-    <details class="grp"><summary>How routes and times are calculated</summary><div class="body small" style="line-height:1.55">
+    <details class="grp"><summary>How routes, times and battery are calculated</summary><div class="body small" style="line-height:1.55">
       <div>Each leg is the shortest path through water deeper than 3 m (NOAA CRM bathymetry, ~90 m grid) that stays at least 150 m from every
       receiver (and out of kelp if you choose), straightened so it only bends where something is in the way. Receiver stops are the stand-off
       point 200 m from the receiver toward deeper water. A ramp inside a harbor joins the nearest grid water cell with a short straight line, so
@@ -293,6 +293,18 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div>Kelp: CDFW 2016 statewide canopy survey (surface + subsurface), rasterised to the routing grid; beds change every year, so treat it as a
       guide. MPAs: CDFW California Marine Protected Areas [ds582]. Battery is an estimate; calibrate it and the speed with a real GPS track via
       <b>Track vs plan</b> after the first mission.</div>
+      <div><b>Battery and power: where the numbers come from</b></div>
+      <ul style="margin:0;padding-left:18px">
+        <li><b>Battery</b>: 3.5 kWh lithium-ion standard; extra packs in 3.5 kWh steps up to 17.5 kWh (Open Ocean Robotics DataXplorer pages). Ask the operator which pack the rented vessel carries and set it under Vessel and battery.</li>
+        <li><b>Range at cruise</b>: 100 nm at 2 kn on the standard pack without solar (manufacturer) = 35 Wh per nm, about 70 W while under way at 2 kn. We treat this as the whole boat's draw, electronics included.</li>
+        <li><b>Other speeds</b>: not published. We scale power with speed&sup3; (drag), so energy per distance grows with speed&sup2;. Sanity check: that gives about 1.9 kW at 6 kn, in line with the 3 HP (2.2 kW) motor and the official 6 kn maximum. Implied range on 3.5 kWh without solar: 3 kn &asymp; 44 nm, 4 kn &asymp; 25 nm, 6 kn &asymp; 11 nm. 8 kn is not an official speed.</li>
+        <li><b>Solar</b>: 270 W panel rating (manufacturer). Real output is lower; we scale it with the height of the sun and the forecast cloud cover.</li>
+        <li><b>eDNA sampler</b>: DataXplorer's eDNA option is the McLane RoCSI. Its datasheet (09/25) gives a 12 V supply, 2 A nominal, 0.4&ndash;0.7 A while running (5&ndash;8 W). Default 10 W while sampling.</li>
+        <li><b>Electronics while stopped (10 W) and holding position (20 W)</b>: not published; these are our assumptions. Replace them with the operator's numbers.</li>
+      </ul>
+      <div>Sources: <a href="https://www.openoceanrobotics.com/uncrewed-surface-vehicles" target="_blank" rel="noopener">Open Ocean Robotics, Uncrewed Surface Vehicles</a> &middot;
+        <a href="https://www.openoceanrobotics.com/uncrewed-surface-vehicles/dataxplorer-enviro" target="_blank" rel="noopener">DataXplorer Enviro (battery options, eDNA sampler)</a> &middot;
+        <a href="https://bluezonegroup.com.au/wp-content/uploads/2025/10/McLane-RoCSI-Datasheet.pdf" target="_blank" rel="noopener">McLane RoCSI datasheet</a>. Checked Oct 2026; no full DataXplorer datasheet is published online.</div>
     </div></details>
   </aside>
 </div>
@@ -314,7 +326,7 @@ const today = ymd(new Date());
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const DEF = { limits: { wind: 15, gust: 20, hs: 2.0, back: "sunset", backT: "18:00", daySample: true, waveLoss: 0, avoidKelp: false },
-              energy: { cap: 3.5, solar: 270, hotel: 10, sampler: 30, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 },
+              energy: { cap: 3.5, solar: 270, hotel: 10, sampler: 10, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 },
               contacts: { op: "", pi: "", lead: "", comms: "", notes: "" } };
 const S = { mode: "build", kn: 2, cur: "still", base: "ocean", date: today, launch: 10, t: 0,
             route: { id: null, name: "", stops: [] },          // stop: {type: ramp|pin|rx, ref, kind: start|pass|sample|end, dwell (h), prio}
@@ -528,7 +540,7 @@ function energy(P) {      // battery state of charge through the mission, 5-minu
   while (t < end) { const s = state(t + dt / 2);
     let cc = 30; if (live && wxCovers(o.date, t)) { const pos = posAt(P, t + dt / 2); cc = idw(WX.wind, pos[0], pos[1], t + daysBetween(WX.base, o.date) * 24, ["cc"]).cc; }
     const solar = E.solar * daylightFrac(o.date, t + dt / 2) * (1 - 0.75 * cc / 100);
-    const load = E.hotel + (s === "move" ? pCruise : s === "sample" ? E.hold + E.sampler : s === "hold" ? E.hold : 0);
+    const load = s === "move" ? pCruise : E.hotel + (s === "sample" ? E.hold + E.sampler : s === "hold" ? E.hold : 0);   // the manufacturer's cruise range already includes the boat's electronics
     soc = Math.min(cap, soc + (solar - load) * dt); minSoc = Math.min(minSoc, soc); t += dt; pts.push([t, soc / cap]); }
   return { pts, minSoc: minSoc / cap, endSoc: soc / cap, cap };
 }
