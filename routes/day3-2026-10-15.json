@@ -1,0 +1,97 @@
+{
+ "name": "Day3",
+ "stops": [
+  {
+   "type": "ramp",
+   "ref": 1,
+   "kind": "start",
+   "dwell": 0
+  },
+  {
+   "type": "rx",
+   "ref": 13,
+   "kind": "sample",
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "rep": 2
+  },
+  {
+   "type": "pt",
+   "ref": "qmv95pylz54k",
+   "kind": "sample",
+   "mode": "station",
+   "rep": 2,
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "series": "smv95pylz"
+  },
+  {
+   "type": "rx",
+   "ref": 12,
+   "kind": "sample",
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "rep": 2
+  },
+  {
+   "type": "rx",
+   "ref": 11,
+   "kind": "sample",
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "rep": 2
+  },
+  {
+   "type": "rx",
+   "ref": 10,
+   "kind": "sample",
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "rep": 2
+  },
+  {
+   "type": "rx",
+   "ref": 9,
+   "kind": "sample",
+   "dwell": 0.6666666666666666,
+   "prio": "high",
+   "rep": 2
+  },
+  {
+   "type": "pt",
+   "ref": "qmv95km8xkgz",
+   "kind": "sample",
+   "mode": "station",
+   "rep": 2,
+   "dwell": 0.6666666666666666,
+   "prio": "high"
+  },
+  {
+   "type": "ramp",
+   "ref": 1,
+   "kind": "end",
+   "dwell": 0
+  }
+ ],
+ "kn": 6,
+ "launch": "08:00",
+ "date": "2026-10-21",
+ "cur": "live",
+ "km": 80.56731311665379,
+ "saved": 1792047736879,
+ "pins": [],
+ "sampleSites": [
+  {
+   "id": "qmv95km8xkgz",
+   "lat": 37.111256,
+   "lon": -122.337484
+  },
+  {
+   "id": "qmv95pylz54k",
+   "lat": 37.057088,
+   "lon": -122.277357,
+   "series": "smv95pylz"
+  }
+ ],
+ "sharedFrom": "Glider Mission Planner"
+}
