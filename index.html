@@ -445,6 +445,7 @@ function stopName(s) { if (s.type === "rx") { const r = RX[s.ref]; return `#${r.
   if (s.type === "ramp") return D.ramps[s.ref].name; const p = S.pins.find(p => p.id === s.ref); return p ? p.name : "(deleted pin)"; }
 function change(fn, msg) { S.history.push(JSON.stringify(S.route.stops)); if (S.history.length > 60) S.history.shift(); fn(); dirty(); render(); if (msg) toast(msg); }
 function addSite(type, ref) { const st = S.route.stops;
+  if (st.length && st[0].kind !== "start") { change(() => st.unshift({ type, ref, kind: "start", dwell: 0 }), "New start set."); return; }
   change(() => { if (!st.length) st.push({ type, ref, kind: "start", dwell: 0 });
     else { const item = { type, ref, kind: "end", dwell: 0 }; if (st[st.length - 1].kind === "end") st[st.length - 1] = item; else st.push(item); } },
     !st.length ? "Start set. Now click receivers in order, then a ramp or pin to finish." : "Finish set."); }
@@ -675,16 +676,18 @@ function drawStatic() {
     .on("dragend", e => { const ll = e.target.getLatLng(); r.lat = +ll.lat.toFixed(6); r.lon = +ll.lng.toFixed(6); S.rampMoves[i] = [r.lat, r.lon]; store.set("rc_ramps", S.rampMoves); legCache.clear(); render(); })
     .addTo(G.sites));
   S.pins.forEach(p => L.marker([p.lat, p.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="pinm"></div><span class="rlab">${esc(p.name)}</span></div>`, iconSize: [20, 20], iconAnchor: [10, 22] }) })
-    .bindTooltip(`<b>${esc(p.name)}</b><br>${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}`, { direction: "top", offset: [0, -22] })
-    .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build") addSite("pin", p.id); })
+    .bindTooltip(`<b>${esc(p.name)}</b><br>${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}<br><i>${S.mode === "build" ? "click to use as start / finish; right-click to delete" : "click to delete; drag to move"}</i>`, { direction: "top", offset: [0, -22] })
+    .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build") addSite("pin", p.id); else siteMenu(e.latlng, p.name, "Delete pin", () => deletePin(p.id)); })
+    .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, p.name, "Delete pin", () => deletePin(p.id)); })
     .on("dragend", e => { const ll = e.target.getLatLng(); p.lat = +ll.lat.toFixed(6); p.lon = +ll.lng.toFixed(6); savePins(); legCache.clear(); render(); })
     .addTo(G.sites));
   const ids = sampleIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
   S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u)).filter(Boolean).join(", ");
     const cls = !s ? "idle" : s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : "";
     L.marker([sp.lat, sp.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && (lab || !s) ? `<span class="rxlab" style="left:19px;top:0">${lab || "site"}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
-      .bindTooltip(`<b>${s ? esc(stopName(s)) : "Sample site (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, " : ""}drag to move</i>`, { direction: "top", offset: [0, -16] })
-      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build" || S.mode === "sample") addPtStop(sp.id); })
+      .bindTooltip(`<b>${s ? esc(stopName(s)) : "Sample site (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, right-click to delete, " : "click to delete, "}drag to move</i>`, { direction: "top", offset: [0, -16] })
+      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build" || S.mode === "sample") addPtStop(sp.id); else siteMenu(e.latlng, s ? stopName(s) : "Sample site", "Delete site", () => deleteSpot(sp.id)); })
+      .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, s ? stopName(s) : "Sample site", "Delete site", () => deleteSpot(sp.id)); })
       .on("dragend", e => { const ll = e.target.getLatLng(), bad = ptProblem(ll.lat, ll.lng); if (bad) { toast(bad); render(); return; }
         const w = ptWarn(ll.lat, ll.lng, sp); sp.lat = +ll.lat.toFixed(6); sp.lon = +ll.lng.toFixed(6); saveSpots(); legCache.clear(); dirty(); render(); if (w.length) toast(`Moved (${w.join(", ")}).`); })
       .addTo(G.sites); });
@@ -718,9 +721,10 @@ let PLAN = null;
 function render() {
   PLAN = compute(); const P = PLAN, st = S.route.stops;
   drawStatic(); drawRoute(P); drawTrack();
-  document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Drag pins to adjust."
+  document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Click a pin to delete it; drag to move."
     : S.mode === "sample" ? (!st.length ? "Click the water to drop sample sites. Then click a ramp or pin in <b>Build route</b> to start, and click sites and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new site becomes the next stop. Click an existing site to visit it." : "Click the water: the new site joins the nearest leg. Click an existing site to add it before the finish.")
     : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route."
+    : st.length && st[0].kind !== "start" ? "The route has no start: click a ramp or pin to set one."
     : !st.length ? "<b>1.</b> Click a green ramp or an orange pin to set the start."
     : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers and sample sites in the order to visit them, then a ramp or pin to finish."
     : "Route complete. Click receivers to insert them before the finish, or another ramp / pin to change it.";
@@ -747,16 +751,16 @@ function render() {
   const ol = document.getElementById("stops"), ids = sampleIds(); let n = 0;
   const prioSel = (s, idx) => `<select class="field" data-prio="${idx}" aria-label="Priority" title="Trim to deadline drops low, then medium priority stops first"><option value="high" ${s.prio === "high" ? "selected" : ""}>high priority</option><option value="med" ${(s.prio || "med") === "med" ? "selected" : ""}>medium priority</option><option value="low" ${s.prio === "low" ? "selected" : ""}>low priority</option></select>`;
   const moveBtns = idx => `<button class="mini" data-up="${idx}" title="Move up">&uarr;</button><button class="mini" data-dn="${idx}" title="Move down">&darr;</button><button class="mini" data-rm="${idx}" title="Remove">&times;</button>`;
-  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop; time on station = samples x minutes per sample"><span class="sub">samples</span>` : "";
+  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop"><span class="sub">${isUW(s) ? `samples &asymp; ${Math.round((+s.rep || 1) * S.samp.minPer)} min while moving` : `samples &times; ${S.samp.minPer} min =`}</span>` : "";
+  const minIn = (s, idx) => `<input class="field" type="number" min="0" step="${s.kind === "sample" ? S.samp.minPer : 5}" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="${s.kind === "sample" ? "Minutes on station; changes the number of samples (one sample = " + S.samp.minPer + " min)" : "Minutes at this stop"}"><span class="sub">min</span>`;
   ol.innerHTML = P.times.map((x, i) => {
     const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isRx) n++;
     const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${ids.get(s) || "&middot;"}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
     const pos = stopPos(s), r = isRx ? RX[s.ref] : null;
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
-        <input class="field" type="number" min="0" step="5" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="Minutes at this stop"><span class="sub">min</span>
-        ${repIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
+        ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Sample type"><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint only</option></select>
-        ${s.kind === "sample" && !isUW(s) ? `<input class="field" type="number" min="0" step="5" value="${Math.round(s.dwell * 60)}" data-ptmin="${idx}" aria-label="Minutes on station"><span class="sub">min</span>` : ""}${repIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
+        ${repIn(s, idx)}${s.kind === "sample" && !isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : `<div class="ctl"><span class="sub">${s.kind === "start" ? "start" : "finish"}</span><button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`;
     const leg = i > 0 ? P.legs[i - 1] : null;
     const t = i === 0 ? hm(P.launch) : hm(x.arr) + (x.arr >= 24 ? `<span class="n">${dayName(x.arr)}</span>` : isNightAt(S.date, x.arr) ? '<span class="n">dark</span>' : "");
@@ -764,12 +768,14 @@ function render() {
     return lm + `<li>${dot}<div style="min-width:0"><div class="nm">${isRx && ids.get(s) ? `<span class="sid">${ids.get(s)}</span>` : ""}${esc(stopName(s))}</div><div class="sub">${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}${isRx ? ` &middot; ${SO(r)} m ${r.sbrg}&deg; off` : isPt ? `${isUW(s) ? ` &middot; sampler on here for ~${Math.round((+s.rep || 1) * S.samp.minPer)} min, no stop` : ""}${inKelp(...pos) ? ' &middot; <span style="color:var(--amber)">in kelp</span>' : ""}${s.series ? ` &middot; series <button class="linkbtn" data-rmser="${s.series}">remove series</button>` : ""}` : s.type === "ramp" ? ` &middot; ${s.kind === "start" ? "mission start" : "mission end"} outside the harbor (dashed: operator drives the harbor)` : ""}</div>${ctl}</div><div class="time">${t}</div></li>`;
   }).join("");
   ol.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.kind]; s.kind = el.value; if (el.value === "sample") s.rep = +s.rep > 1 ? +s.rep : S.samp.reps; s.dwell = el.value === "sample" ? s.rep * S.samp.minPer / 60 : S.passDefault() / 60; if (el.value === "sample" && (s.prio || "med") === "med") s.prio = "high"; }));
-  ol.querySelectorAll("[data-dwell]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.dwell].dwell = Math.max(0, +el.value) / 60; }));
+  ol.querySelectorAll("[data-dwell]").forEach(el => el.onchange = () => { const s = st[+el.dataset.dwell], m = Math.max(0, +el.value);
+    if (s.kind !== "sample") { change(() => { s.dwell = m / 60; }); return; }
+    const rep = Math.max(1, Math.round(m / S.samp.minPer));     // time on station and samples are tied: one sample = minutes per sample
+    change(() => { s.rep = rep; s.dwell = rep * S.samp.minPer / 60; }, rep * S.samp.minPer !== m ? `${rep} sample${rep > 1 ? "s" : ""} = ${rep * S.samp.minPer} min (one sample takes ${S.samp.minPer} min).` : null); });
   ol.querySelectorAll("[data-prio]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.prio].prio = el.value; }));
   ol.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => change(() => st.splice(+el.dataset.rm, 1)));
   ol.querySelectorAll("[data-pkind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.pkind];
     if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? s.rep * S.samp.minPer / 60 : 0; } }));
-  ol.querySelectorAll("[data-ptmin]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.ptmin].dwell = Math.max(0, +el.value) / 60; }));
   ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
   ol.querySelectorAll("[data-rmser]").forEach(el => el.onclick = () => { const tag = el.dataset.rmser; change(() => { S.route.stops = st.filter(s => s.series !== tag); }, "Series removed.");
     S.spots = S.spots.filter(x => x.series !== tag || S.route.stops.some(s => s.ref === x.id)); saveSpots(); render(); });
@@ -814,7 +820,7 @@ function lists() {
   sl.querySelectorAll("[data-goramp]").forEach(b => b.onclick = () => { const r = D.ramps[+b.dataset.goramp]; map.setView([r.lat, r.lon], 15); });
   sl.querySelectorAll("[data-gopin]").forEach(b => b.onclick = () => { const p = S.pins.find(x => x.id === b.dataset.gopin); map.setView([p.lat, p.lon], 15); });
   sl.querySelectorAll("[data-pname]").forEach(el => el.onchange = () => { S.pins.find(x => x.id === el.dataset.pname).name = el.value || "Pin"; savePins(); render(); });
-  sl.querySelectorAll("[data-rmpin]").forEach(b => b.onclick = () => { S.pins = S.pins.filter(x => x.id !== b.dataset.rmpin); S.route.stops = S.route.stops.filter(s => !(s.type === "pin" && s.ref === b.dataset.rmpin)); savePins(); render(); });
+  sl.querySelectorAll("[data-rmpin]").forEach(b => b.onclick = () => deletePin(b.dataset.rmpin));
 }
 function socChart(P) {
   const el = document.getElementById("socChart"), E = P.energy;
@@ -857,6 +863,16 @@ function updateBoat() {
   clock.innerHTML = `${dayName(t)} ${hm(t)}${isNightAt(S.date, t) ? " &#9790;" : " &#9788;"}<small>${esc(what)}${wx}</small>`;
 }
 const savePins = () => store.set("rc_pins", S.pins);
+function deletePin(id) { const p = S.pins.find(x => x.id === id); if (!p) { map.closePopup(); return; } const used = S.route.stops.some(s => s.type === "pin" && s.ref === id);
+  if (used) change(() => { S.route.stops = S.route.stops.filter(s => !(s.type === "pin" && s.ref === id)); });
+  S.pins = S.pins.filter(x => x.id !== id); savePins(); map.closePopup(); render();
+  toast(`Deleted ${p.name}.${used ? (S.route.stops.length && S.route.stops[0].kind !== "start" ? " It was the route start: click a ramp or pin to set a new one." : " It was removed from the route.") : ""}`); }
+function deleteSpot(id) { const used = S.route.stops.some(s => s.type === "pt" && s.ref === id);
+  if (used) change(() => { S.route.stops = S.route.stops.filter(s => !(s.type === "pt" && s.ref === id)); });
+  S.spots = S.spots.filter(x => x.id !== id); saveSpots(); map.closePopup(); render(); toast(used ? "Sample site deleted and removed from the route." : "Sample site deleted."); }
+function siteMenu(ll, title, label, fn) {   // small popup on a pin / sample site with a delete button (click outside Build mode, or right-click)
+  const d = document.createElement("div"); d.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${esc(title)}</div><button class="btn danger">${label}</button>`;
+  d.querySelector("button").onclick = fn; L.popup({ offset: [0, -14] }).setLatLng(ll).setContent(d).openOn(map); }
 function dirty() { document.getElementById("savedState").textContent = "unsaved changes"; }
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
 function snapshot() { return { ...JSON.parse(JSON.stringify(S.route)), kn: S.kn, launch: document.getElementById("launch").value, date: S.date, cur: S.cur, km: PLAN ? PLAN.km : 0, saved: Date.now() }; }
@@ -1109,7 +1125,9 @@ const SETTINGS = [["limWind", "limits", "wind"], ["limGust", "limits", "gust"], 
   ["ctOp", "contacts", "op"], ["ctPi", "contacts", "pi"], ["ctLead", "contacts", "lead"], ["ctComms", "contacts", "comms"], ["ctNotes", "contacts", "notes"]];
 function settingsUI() { SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id); if (el.type === "checkbox") el.checked = !!S[g][k]; else el.value = S[g][k]; }); }
 SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id);
-  el.onchange = () => { S[g][k] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; store.set(g === "samp" ? "rc_samp2" : "rc_" + g, S[g]); if (k === "avoidKelp") buildFree(); if (g !== "contacts") render(); }; });
+  el.onchange = () => { S[g][k] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; store.set(g === "samp" ? "rc_samp2" : "rc_" + g, S[g]); if (k === "avoidKelp") buildFree();
+    if (k === "minPer") { S.route.stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = (+x.rep || 1) * S.samp.minPer / 60; }); dirty(); toast(`Sampling stops re-timed: ${S.samp.minPer} min per sample.`); }
+    if (g !== "contacts") render(); }; });
 
 // ---------- layers ----------
 const LAYER_UI = { kelp: "Kelp canopy (CDFW 2016)", mpa: "Marine Protected Areas", arrows: "Direction arrows", labels: "Receiver labels", track: "Imported GPS track" };
