@@ -72,7 +72,7 @@ ol.stops li.removed { opacity:.45; }
 .dot.sample { background:var(--sample); color:#2a0530; } .dot.pt { border-radius:7px; background:var(--sample); color:#2a0530; font-size:10px; } .dot.pt.uw { background:transparent; color:var(--sample); border:2.5px solid var(--sample); } .dot.pt.wp { background:var(--card2); color:var(--muted); border:1px solid var(--line); }
 .sid { display:inline-block; padding:0 5px; margin-right:4px; border-radius:5px; background:var(--sample); color:#2a0530; font:700 10.5px Inter; }
 .ptm { width:16px; height:16px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:var(--sample); border:2px solid var(--halo); box-shadow:0 1px 4px rgba(0,0,0,.5); cursor:grab; }
-.ptm.uw { background:var(--halo); border:3px solid var(--sample); } .ptm.wp { background:var(--route2); border-radius:3px; transform:none; width:12px; height:12px; }
+.ptm.uw { background:var(--halo); border:3px solid var(--sample); } .ptm.idle { opacity:.5; } .ptm.wp { background:var(--route2); border-radius:3px; transform:none; width:12px; height:12px; }
 .serform { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:4px 10px 6px 44px; } .serform select, .serform input { height:26px; padding:2px 6px; font-size:12px; } .serform input { width:64px; }
 .linkbtn { background:none; border:0; padding:0; color:var(--route); font:inherit; cursor:pointer; text-decoration:underline; } .dot.ramp { background:var(--ramp); color:#052e12; } .dot.pin { background:var(--pin); color:#3b1603; }
 .nm { font-weight:600; font-size:13.5px; } .sub { font-size:11px; color:var(--muted); font-family:'JetBrains Mono',monospace; }
@@ -236,13 +236,15 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <div class="sec"><div class="label">Speed through water <span><input class="field" type="number" id="kncustom" min="0.5" max="8" step="0.1" style="width:64px;height:24px;padding:2px 6px"> kn custom</span></div><div class="seg" id="speed"></div></div>
     <div class="sec"><div class="label">Currents + wind drift</div><div class="seg" id="cur"></div><div class="wxstatus" id="wxstatus"><i></i><span>Live forecast not loaded</span></div></div>
     <div class="sec kpis" id="kpis"></div>
-    <div class="sec"><div class="label">Stops in order <span>pass / sample, priority</span></div>
-      <div class="row" style="margin-bottom:8px"><span class="small">Default pass</span><input class="field" type="number" id="passmin" value="15" min="0" max="120" step="5" style="width:62px"><span class="small">min &middot; sample</span><input class="field" type="number" id="sampleh" value="2.5" min="0" max="12" step="0.25" style="width:62px"><span class="small">h</span></div>
-      <div class="grid3" style="margin-bottom:8px">
-        <label class="lbl">Min per sample<input class="field" type="number" id="spMin" min="1" max="600" step="5" title="Minutes the sampler runs per replicate at a sample point"></label>
-        <label class="lbl">Cartridges<input class="field" type="number" id="spCap" min="0" step="1" title="Cartridges on board; 0 = do not check"></label>
-        <label class="lbl">Field blanks<input class="field" type="number" id="spBlanks" min="0" step="1"></label>
+    <div class="sec"><div class="label">Stops in order <span>pass or sample at each stop</span></div>
+      <div class="row" style="margin-bottom:8px"><span class="small">Default pass</span><input class="field" type="number" id="passmin" value="15" min="0" max="120" step="5" style="width:62px"><span class="small">min at a receiver you only pass</span></div>
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="lbl">Samples per stop<input class="field" type="number" id="spReps" min="1" max="24" step="1" title="Default number of samples (cartridges) taken at each sampling stop"></label>
+        <label class="lbl">Minutes per sample<input class="field" type="number" id="spMin" min="1" max="600" step="1" title="How long one sample takes; time on station = samples x minutes"></label>
+        <label class="lbl">Cartridges on board<input class="field" type="number" id="spCap" min="0" step="1" title="0 = do not check"></label>
+        <label class="lbl">Field blanks<input class="field" type="number" id="spBlanks" min="0" step="1" title="Blanks use cartridges but need no stop"></label>
       </div>
+      <div class="small" style="margin-bottom:8px"><b>samples</b> on a stop = cartridges used there; time on station = samples &times; minutes per sample. <b>Priority</b> (high / medium / low) is only used by <b>Trim to deadline</b>, which drops low, then medium stops when you would be back too late.</div>
       <div class="row" style="margin-bottom:8px"><button class="btn" id="optimize" title="Reorder receiver stops for the shortest water distance between the fixed start and finish">&#8645; Optimize order</button><button class="btn" id="trim" title="Drop low, then medium priority stops until the vessel is back by the deadline">&#9986; Trim to deadline</button></div>
       <ol class="stops" id="stops"></ol></div>
     <div class="sec"><div class="label">Battery over the mission <span id="socNote"></span></div><div class="chart" id="socChart"></div></div>
@@ -305,7 +307,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div>Kelp: CDFW 2016 statewide canopy survey (surface + subsurface), rasterised to the routing grid; beds change every year, so treat it as a
       guide. MPAs: CDFW California Marine Protected Areas [ds582]. Battery is an estimate; calibrate it and the speed with a real GPS track via
       <b>Track vs plan</b> after the first mission.</div>
-      <div><b>Sample points</b>: use <b>Sample point</b> on the map toolbar and click the water. The point joins the leg it is closest to, and you can drag it. <b>On station</b> = the vessel stops and holds position while the sampler runs (replicates &times; minutes per replicate, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds points every X km, every X minutes (at that leg's average speed) or N evenly spaced. Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, replicates) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (replicates + blanks).</div>
+      <div><b>Sample points</b>: use <b>Sample point</b> on the map toolbar and click the water to drop a sample site. Sites work like receivers: while you build a route the new site becomes the next stop, and in Build route you can click any site to visit it. Once the route has a finish, a new site joins the leg it is closest to. Drag a site to move it. <b>On station</b> = the vessel stops and holds position while the sampler runs (samples &times; minutes per sample, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds N evenly spaced stops (default one, halfway), or one every X km or X minutes (at that leg's average speed). Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, n_samples) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (samples + blanks).</div>
       <div><b>Battery and power: where the numbers come from</b></div>
       <ul style="margin:0;padding-left:18px">
         <li><b>Battery</b>: 3.5 kWh lithium-ion standard; extra packs in 3.5 kWh steps up to 17.5 kWh (Open Ocean Robotics DataXplorer pages). Ask the operator which pack the rented vessel carries and set it under Vessel and battery.</li>
@@ -339,13 +341,13 @@ const today = ymd(new Date());
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const DEF = { limits: { wind: 15, gust: 20, hs: 2.0, back: "sunset", backT: "18:00", daySample: true, waveLoss: 0, avoidKelp: false },
-              energy: { cap: 3.5, solar: 270, hotel: 10, sampler: 10, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 }, samp: { minPer: 30, cap: 0, blanks: 0 },
+              energy: { cap: 3.5, solar: 270, hotel: 10, sampler: 10, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 }, samp: { minPer: 20, reps: 2, cap: 24, blanks: 0 },
               contacts: { op: "", pi: "", lead: "", comms: "", notes: "" } };
 const S = { mode: "build", kn: 2, cur: "still", base: "ocean", date: today, launch: 10, t: 0,
             route: { id: null, name: "", stops: [] },          // stop: {type: ramp|pin|rx|pt, ref (pt: lat, lon, mode station|underway, series), kind: start|pass|sample|end, dwell (h), prio, rep}
             pins: store.get("rc_pins", []), routes: store.get("rc_routes", []), rampMoves: store.get("rc_ramps", {}),
             limits: { ...DEF.limits, ...store.get("rc_limits", {}) }, energy: { ...DEF.energy, ...store.get("rc_energy", {}) },
-            ops: { ...DEF.ops, ...store.get("rc_ops", {}) }, samp: { ...DEF.samp, ...store.get("rc_samp", {}) }, contacts: { ...DEF.contacts, ...store.get("rc_contacts", {}) },
+            ops: { ...DEF.ops, ...store.get("rc_ops", {}) }, samp: { ...DEF.samp, ...store.get("rc_samp2", {}) }, spots: store.get("rc_spots", []), contacts: { ...DEF.contacts, ...store.get("rc_contacts", {}) },
             layers: { kelp: true, mpa: true, arrows: true, labels: true, track: true }, track: null, history: [] };
 D.ramps.forEach((r, i) => { const m = S.rampMoves[i]; if (m) { r.lat = m[0]; r.lon = m[1]; } });
 const RX = Object.fromEntries(D.rx.map(r => [r.num, r]));
@@ -432,7 +434,7 @@ function mpaAt(lat, lon) { for (let k = 0; k < D.mpas.length; k++) { const [a, b
 const ddm = (v, p, n) => { const a = Math.abs(v), d = Math.floor(a); return `${d}°${((a - d) * 60).toFixed(3).padStart(6, "0")}' ${v >= 0 ? p : n}`; };
 
 // ---------- stops ----------
-function stopPos(s) { if (s.type === "pt") return [s.lat, s.lon]; if (s.type === "rx") { const r = RX[s.ref]; return r ? [r.slat, r.slon] : null; }
+function stopPos(s) { if (s.type === "pt") { const p = spotOf(s); return p ? [p.lat, p.lon] : null; } if (s.type === "rx") { const r = RX[s.ref]; return r ? [r.slat, r.slon] : null; }
   if (s.type === "ramp") { const r = D.ramps[s.ref]; return r ? (r.harbor?.length ? r.harbor[r.harbor.length - 1] : [r.lat, r.lon]) : null; }
   const p = S.pins.find(p => p.id === s.ref); return p ? [p.lat, p.lon] : null; }
 function harborPath(s, out) {   // operator-driven transit ramp -> mission start (out) or mission end -> ramp
@@ -460,17 +462,27 @@ function ptProblem(lat, lon) {   // a sample point must be in navigable water an
   const [i, j] = cellOf(lat, lon); if (!(i >= 0 && j >= 0 && i < NX && j < NY) || !WATER[j * NX + i]) return `That spot is on land or shallower than ${D.minDepth} m.`;
   const r = D.rx.find(r => dist([lat, lon], [r.lat, r.lon]) < KO(r) + 50); return r ? `Too close to #${r.num} ${r.name}: keep sample points more than ${KO(r) + 50} m away.` : null; }
 function ptWarn(lat, lon, self) { const w = []; if (inKelp(lat, lon)) w.push("in mapped kelp");
-  if (S.route.stops.some(s => s !== self && s.type === "pt" && dist([lat, lon], [s.lat, s.lon]) < 50)) w.push("within 50 m of another sample point"); return w; }
-const newPt = (lat, lon, o = {}) => ({ type: "pt", lat: +lat.toFixed(6), lon: +lon.toFixed(6), kind: "sample", mode: "station", rep: 1, dwell: S.samp.minPer / 60, prio: "high", ...o });
+  if (S.spots.some(x => x !== self && dist([lat, lon], [x.lat, x.lon]) < 50)) w.push("within 50 m of another sample site"); return w; }
+// sample sites live on the map like pins (S.spots, saved in this browser); a route visits one with a stop {type: "pt", ref: site id}
+function spotOf(s) { return s.ref ? S.spots.find(x => x.id === s.ref) : s.lat != null ? s : null; }
+const saveSpots = () => store.set("rc_spots", S.spots);
+function newSpot(lat, lon, o = {}) { const sp = { id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), lat: +lat.toFixed(6), lon: +lon.toFixed(6), ...o }; S.spots.push(sp); saveSpots(); return sp.id; }
+const newPt = (ref, o = {}) => ({ type: "pt", ref, kind: "sample", mode: "station", rep: S.samp.reps, dwell: S.samp.reps * S.samp.minPer / 60, prio: "high", ...o });
+function migratePts(stops) { stops.forEach(s => { if (s.type === "pt" && !s.ref && s.lat != null) { s.ref = newSpot(s.lat, s.lon, s.series ? { series: s.series } : {}); delete s.lat; delete s.lon; } }); return stops; }
+function addPtStop(id) { const st = S.route.stops;   // like clicking a receiver: next stop, before the finish
+  if (!st.length) { toast("Pick a start first: click a ramp or one of your pins."); return; }
+  change(() => { const item = newPt(id); if (st[st.length - 1].kind === "end") st.splice(st.length - 1, 0, item); else st.push(item); }); }
 function insertIndex(pos) {   // where a new mid-route stop goes: before the end of the leg it is closest to
   const st = S.route.stops, P = PLAN; let best = null;
   P.legs.forEach((l, i) => { for (let k = 1; k < l.pts.length; k++) { const d = rxClearanceOne(l.pts[k - 1], l.pts[k], { lat: pos[0], lon: pos[1] }); if (!best || d < best.d) best = { d, i }; } });
   if (best) return st.indexOf(P.times[best.i + 1].s);
   return st[st.length - 1].kind === "end" ? st.length - 1 : st.length; }
-function addPt(lat, lon) { const st = S.route.stops;
-  if (!st.length) { toast("Set a start first: in Build route, click a ramp or one of your pins."); return; }
-  const bad = ptProblem(lat, lon); if (bad) { toast(bad); return; }
-  const w = ptWarn(lat, lon); change(() => st.splice(insertIndex([lat, lon]), 0, newPt(lat, lon)), `Sample point added${w.length ? " (" + w.join(", ") + ")" : ""}. Drag it to adjust; set on station / under way in the stop list.`); }
+function addPt(lat, lon) {   // Sample point tool: drop a sample site; while building, it also becomes the next stop (or joins the nearest leg once the route has a finish)
+  const st = S.route.stops, bad = ptProblem(lat, lon); if (bad) { toast(bad); return; }
+  const w = ptWarn(lat, lon), id = newSpot(lat, lon), note = w.length ? ` (${w.join(", ")})` : "";
+  if (!st.length) { render(); toast(`Sample site added${note}. In Build route, click a ramp or pin to start, then click sites and receivers in order.`); return; }
+  const done = st[st.length - 1].kind === "end";
+  change(() => st.splice(done ? insertIndex([lat, lon]) : st.length, 0, newPt(id)), `Sample site added ${done ? "to the nearest leg" : "as the next stop"}${note}. Drag it to adjust.`); }
 function alongPts(pts, d) { let acc = 0; for (let k = 1; k < pts.length; k++) { const L = dist(pts[k - 1], pts[k]); if (acc + L >= d) { const f = (d - acc) / Math.max(1e-9, L), a = pts[k - 1], b = pts[k]; return [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])]; } acc += L; } return pts[pts.length - 1]; }
 function addSeries(i, by, v, mode) {   // sample points along leg i (the leg arriving at P.times[i])
   const leg = PLAN.legs[i - 1], to = PLAN.times[i].s, L = plen(leg.pts), ds = [];
@@ -480,7 +492,7 @@ function addSeries(i, by, v, mode) {   // sample points along leg i (the leg arr
   const tag = "s" + Date.now().toString(36), pts = ds.map(d => alongPts(leg.pts, d)).filter(p => !ptProblem(...p)), skip = ds.length - pts.length;
   if (!pts.length) { toast("No valid points at that spacing on this leg."); return; }
   S.serLeg = null;
-  change(() => { const st = S.route.stops; st.splice(st.indexOf(to), 0, ...pts.map(p => newPt(p[0], p[1], { mode, series: tag }))); },
+  change(() => { const st = S.route.stops; st.splice(st.indexOf(to), 0, ...pts.map(p => newPt(newSpot(p[0], p[1], { series: tag }), { mode, series: tag, ...(mode === "underway" ? { dwell: 0 } : {}) }))); },
     `${pts.length} sample points added along the leg${skip ? ` (${skip} skipped: too close to a receiver or over shallows)` : ""}.`); }
 
 // ---------- live forecast ----------
@@ -608,7 +620,7 @@ function checks(P) {
   if (L.daySample) P.times.forEach(x => { if (x.s.kind === "sample" && (isNightAt(o.date, x.arr) || isNightAt(o.date, x.dep - 1e-3))) add(1, `Sampling at ${stopName(x.s)} falls in darkness.`); });
   if (P.energy.minSoc < 0.2) add(P.energy.minSoc <= 0 ? 2 : 1, `Battery drops to ${(Math.max(0, P.energy.minSoc) * 100).toFixed(0)} %.`);
   if (P.kelpKm > 0.05) add(1, `${P.kelpKm.toFixed(1)} km of the route crosses mapped kelp.`);
-  o.stops.forEach(s => { if (s.type === "pt" && inKelp(s.lat, s.lon)) add(1, `${stopName(s)} is in mapped kelp.`); });
+  o.stops.forEach(s => { const p = s.type === "pt" && stopPos(s); if (p && inKelp(...p)) add(1, `${stopName(s)} is in mapped kelp.`); });
   const sm = o.stops.filter(s => isMid(s) && s.kind === "sample"), reps = sm.reduce((a, s) => a + (+s.rep || 1), 0), need = reps + (+S.samp.blanks || 0);
   P.sampling = { stops: sm.length, reps, need };
   for (let k = 1; k < P.uw.length; k++) if (P.uw[k][0] < P.uw[k - 1][1] - 1e-6) { add(1, `Under-way samples overlap: ${stopName(P.uw[k - 1][2])} is still running (${Math.round(S.samp.minPer * (+P.uw[k - 1][2].rep || 1))} min) when ${stopName(P.uw[k][2])} starts. Space them further apart or shorten the sample time.`); break; }
@@ -667,6 +679,15 @@ function drawStatic() {
     .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build") addSite("pin", p.id); })
     .on("dragend", e => { const ll = e.target.getLatLng(); p.lat = +ll.lat.toFixed(6); p.lon = +ll.lng.toFixed(6); savePins(); legCache.clear(); render(); })
     .addTo(G.sites));
+  const ids = sampleIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
+  S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u)).filter(Boolean).join(", ");
+    const cls = !s ? "idle" : s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : "";
+    L.marker([sp.lat, sp.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && (lab || !s) ? `<span class="rxlab" style="left:19px;top:0">${lab || "site"}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
+      .bindTooltip(`<b>${s ? esc(stopName(s)) : "Sample site (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, " : ""}drag to move</i>`, { direction: "top", offset: [0, -16] })
+      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build" || S.mode === "sample") addPtStop(sp.id); })
+      .on("dragend", e => { const ll = e.target.getLatLng(), bad = ptProblem(ll.lat, ll.lng); if (bad) { toast(bad); render(); return; }
+        const w = ptWarn(ll.lat, ll.lng, sp); sp.lat = +ll.lat.toFixed(6); sp.lon = +ll.lng.toFixed(6); saveSpots(); legCache.clear(); dirty(); render(); if (w.length) toast(`Moved (${w.join(", ")}).`); })
+      .addTo(G.sites); });
   [["kelp", G.kelp], ["mpa", G.mpa], ["track", G.track]].forEach(([k, g]) => S.layers[k] ? g.addTo(map) : map.removeLayer(g));
 }
 function drawRoute(P) {
@@ -685,14 +706,6 @@ function drawRoute(P) {
   let n = 0;
   P.times.forEach(x => { if (x.s.type !== "rx") return; n++; const sm = x.s.kind === "sample";
     L.marker(stopPos(x.s), { pane: "stops", interactive: false, icon: L.divIcon({ className: "", html: `<div class="stopn ${sm ? "sample" : ""}">${n}</div>`, iconSize: sm ? [24, 24] : [20, 20] }) }).addTo(G.stops); });
-  const ids = sampleIds();
-  S.route.stops.forEach(s => { if (s.type !== "pt") return; const id = ids.get(s), cls = s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : "";
-    L.marker([s.lat, s.lon], { pane: "stops", draggable: S.mode !== "pan", icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && id ? `<span class="rxlab" style="left:19px;top:0">${id}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
-      .bindTooltip(`<b>${esc(stopName(s))}</b><br>${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}${s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} replicate${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>drag to move</i>`, { direction: "top", offset: [0, -16] })
-      .on("click", e => L.DomEvent.stop(e))
-      .on("dragend", e => { const ll = e.target.getLatLng(), bad = ptProblem(ll.lat, ll.lng); if (bad) { toast(bad); render(); return; }
-        change(() => { s.lat = +ll.lat.toFixed(6); s.lon = +ll.lng.toFixed(6); }, ptWarn(ll.lat, ll.lng, s).length ? `Moved (${ptWarn(ll.lat, ll.lng, s).join(", ")}).` : null); })
-      .addTo(G.stops); });
 }
 function drawTrack() { G.track.clearLayers(); if (!S.track) return;
   L.polyline(S.track.pts.map(p => [p.lat, p.lon]), { pane: "track", color: css("--track"), weight: 3, dashArray: "7 5", interactive: false }).addTo(G.track); }
@@ -706,10 +719,10 @@ function render() {
   PLAN = compute(); const P = PLAN, st = S.route.stops;
   drawStatic(); drawRoute(P); drawTrack();
   document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Drag pins to adjust."
-    : S.mode === "sample" ? (st.length ? "Click the water to add a sample point; it joins the nearest leg. Drag points to adjust." : "Set a start first: in <b>Build route</b>, click a ramp or pin.")
+    : S.mode === "sample" ? (!st.length ? "Click the water to drop sample sites. Then click a ramp or pin in <b>Build route</b> to start, and click sites and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new site becomes the next stop. Click an existing site to visit it." : "Click the water: the new site joins the nearest leg. Click an existing site to add it before the finish.")
     : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route."
     : !st.length ? "<b>1.</b> Click a green ramp or an orange pin to set the start."
-    : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers in the order to visit them, then a ramp or pin to finish."
+    : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers and sample sites in the order to visit them, then a ramp or pin to finish."
     : "Route complete. Click receivers to insert them before the finish, or another ramp / pin to change it.";
   // status
   const C = P.checks, sb = document.getElementById("statusBox");
@@ -732,33 +745,34 @@ function render() {
       ${P.kelpKm > 0.05 || P.mpas.size ? `<div class="kpi wide"><div class="k">Crosses</div><div class="v" style="font-size:14px">${P.kelpKm > 0.05 ? `<span class="tag amber" style="margin:0 6px 0 0">${P.kelpKm.toFixed(1)} km kelp</span>` : ""}${[...P.mpas].map(m => `<span class="tag night" style="margin:0 4px 4px 0">${esc(m)}</span>`).join("")}</div></div>` : ""}`; }
   // stops
   const ol = document.getElementById("stops"), ids = sampleIds(); let n = 0;
-  const prioSel = (s, idx) => `<select class="field" data-prio="${idx}" aria-label="Priority"><option value="high" ${s.prio === "high" ? "selected" : ""}>high</option><option value="med" ${(s.prio || "med") === "med" ? "selected" : ""}>med</option><option value="low" ${s.prio === "low" ? "selected" : ""}>low</option></select>`;
+  const prioSel = (s, idx) => `<select class="field" data-prio="${idx}" aria-label="Priority" title="Trim to deadline drops low, then medium priority stops first"><option value="high" ${s.prio === "high" ? "selected" : ""}>high priority</option><option value="med" ${(s.prio || "med") === "med" ? "selected" : ""}>medium priority</option><option value="low" ${s.prio === "low" ? "selected" : ""}>low priority</option></select>`;
   const moveBtns = idx => `<button class="mini" data-up="${idx}" title="Move up">&uarr;</button><button class="mini" data-dn="${idx}" title="Move down">&darr;</button><button class="mini" data-rm="${idx}" title="Remove">&times;</button>`;
-  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Replicates" title="Replicates (cartridges)"><span class="sub">rep</span>` : "";
+  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop; time on station = samples x minutes per sample"><span class="sub">samples</span>` : "";
   ol.innerHTML = P.times.map((x, i) => {
     const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isRx) n++;
     const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${ids.get(s) || "&middot;"}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
     const pos = stopPos(s), r = isRx ? RX[s.ref] : null;
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
-        <input class="field" type="number" min="0" step="${s.kind === "sample" ? 0.25 : 5}" value="${s.kind === "sample" ? s.dwell : Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Time at stop"><span class="sub">${s.kind === "sample" ? "h" : "min"}</span>
+        <input class="field" type="number" min="0" step="5" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="Minutes at this stop"><span class="sub">min</span>
         ${repIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Sample type"><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint only</option></select>
         ${s.kind === "sample" && !isUW(s) ? `<input class="field" type="number" min="0" step="5" value="${Math.round(s.dwell * 60)}" data-ptmin="${idx}" aria-label="Minutes on station"><span class="sub">min</span>` : ""}${repIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : `<div class="ctl"><span class="sub">${s.kind === "start" ? "start" : "finish"}</span><button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`;
     const leg = i > 0 ? P.legs[i - 1] : null;
     const t = i === 0 ? hm(P.launch) : hm(x.arr) + (x.arr >= 24 ? `<span class="n">${dayName(x.arr)}</span>` : isNightAt(S.date, x.arr) ? '<span class="n">dark</span>' : "");
-    const lm = leg ? `<div class="legmeta">&darr; <button class="linkbtn" data-ser="${i}" title="Add sample points along this leg">+ samples</button> &middot; ${leg.km.toFixed(1)} km &middot; ${leg.h.toFixed(1)} h &middot; course ${bearing(leg.pts[0], leg.pts[1] || leg.pts[0]).toFixed(0)}&deg;${leg.pts.length > 2 ? ` &middot; ${leg.pts.length - 2} bends` : ""}${leg.kelpM > 50 ? ` &middot; <span class="k">${(leg.kelpM / 1000).toFixed(1)} km kelp</span>` : ""}${leg.ok ? "" : ' &middot; <span class="w">no water path found</span>'}</div>${S.serLeg === i ? `<div class="serform"><select class="field" id="serBy"><option value="km">every km</option><option value="min">every min</option><option value="n">N evenly spaced</option></select><input class="field" type="number" id="serV" value="2" min="0.1" step="any" aria-label="Spacing"><select class="field" id="serMode"><option value="station">on station</option><option value="underway">under way</option></select><button class="btn primary" id="serGo">Add</button><button class="mini" id="serX" title="Cancel">&times;</button></div>` : ""}` : "";
-    return lm + `<li>${dot}<div style="min-width:0"><div class="nm">${isRx && ids.get(s) ? `<span class="sid">${ids.get(s)}</span>` : ""}${esc(stopName(s))}</div><div class="sub">${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}${isRx ? ` &middot; ${SO(r)} m ${r.sbrg}&deg; off` : isPt ? `${isUW(s) ? ` &middot; sampler on here for ~${Math.round((+s.rep || 1) * S.samp.minPer)} min, no stop` : ""}${inKelp(s.lat, s.lon) ? ' &middot; <span style="color:var(--amber)">in kelp</span>' : ""}${s.series ? ` &middot; series <button class="linkbtn" data-rmser="${s.series}">remove series</button>` : ""}` : s.type === "ramp" ? ` &middot; ${s.kind === "start" ? "mission start" : "mission end"} outside the harbor (dashed: operator drives the harbor)` : ""}</div>${ctl}</div><div class="time">${t}</div></li>`;
+    const lm = leg ? `<div class="legmeta">&darr; <button class="linkbtn" data-ser="${i}" title="Add sample stops along this leg (default: one, halfway)">+ samples</button> &middot; ${leg.km.toFixed(1)} km &middot; ${leg.h.toFixed(1)} h &middot; course ${bearing(leg.pts[0], leg.pts[1] || leg.pts[0]).toFixed(0)}&deg;${leg.pts.length > 2 ? ` &middot; ${leg.pts.length - 2} bends` : ""}${leg.kelpM > 50 ? ` &middot; <span class="k">${(leg.kelpM / 1000).toFixed(1)} km kelp</span>` : ""}${leg.ok ? "" : ' &middot; <span class="w">no water path found</span>'}</div>${S.serLeg === i ? `<div class="serform"><select class="field" id="serBy"><option value="n">N evenly spaced</option><option value="km">every km</option><option value="min">every min</option></select><input class="field" type="number" id="serV" value="1" min="0.1" step="any" aria-label="Number or spacing"><select class="field" id="serMode"><option value="station">on station</option><option value="underway">under way</option></select><button class="btn primary" id="serGo">Add</button><button class="mini" id="serX" title="Cancel">&times;</button></div>` : ""}` : "";
+    return lm + `<li>${dot}<div style="min-width:0"><div class="nm">${isRx && ids.get(s) ? `<span class="sid">${ids.get(s)}</span>` : ""}${esc(stopName(s))}</div><div class="sub">${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}${isRx ? ` &middot; ${SO(r)} m ${r.sbrg}&deg; off` : isPt ? `${isUW(s) ? ` &middot; sampler on here for ~${Math.round((+s.rep || 1) * S.samp.minPer)} min, no stop` : ""}${inKelp(...pos) ? ' &middot; <span style="color:var(--amber)">in kelp</span>' : ""}${s.series ? ` &middot; series <button class="linkbtn" data-rmser="${s.series}">remove series</button>` : ""}` : s.type === "ramp" ? ` &middot; ${s.kind === "start" ? "mission start" : "mission end"} outside the harbor (dashed: operator drives the harbor)` : ""}</div>${ctl}</div><div class="time">${t}</div></li>`;
   }).join("");
-  ol.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.kind]; s.kind = el.value; s.dwell = el.value === "sample" ? +document.getElementById("sampleh").value : S.passDefault() / 60; if (el.value === "sample" && (s.prio || "med") === "med") s.prio = "high"; }));
-  ol.querySelectorAll("[data-dwell]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.dwell]; s.dwell = s.kind === "sample" ? +el.value : +el.value / 60; }));
+  ol.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.kind]; s.kind = el.value; if (el.value === "sample") s.rep = +s.rep > 1 ? +s.rep : S.samp.reps; s.dwell = el.value === "sample" ? s.rep * S.samp.minPer / 60 : S.passDefault() / 60; if (el.value === "sample" && (s.prio || "med") === "med") s.prio = "high"; }));
+  ol.querySelectorAll("[data-dwell]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.dwell].dwell = Math.max(0, +el.value) / 60; }));
   ol.querySelectorAll("[data-prio]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.prio].prio = el.value; }));
   ol.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => change(() => st.splice(+el.dataset.rm, 1)));
   ol.querySelectorAll("[data-pkind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.pkind];
-    if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.dwell = el.value === "station" ? (+s.rep || 1) * S.samp.minPer / 60 : 0; } }));
+    if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? s.rep * S.samp.minPer / 60 : 0; } }));
   ol.querySelectorAll("[data-ptmin]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.ptmin].dwell = Math.max(0, +el.value) / 60; }));
-  ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (s.type === "pt" && !isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
-  ol.querySelectorAll("[data-rmser]").forEach(el => el.onclick = () => change(() => { S.route.stops = st.filter(s => s.series !== el.dataset.rmser); }, "Series removed. Undo to restore."));
+  ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
+  ol.querySelectorAll("[data-rmser]").forEach(el => el.onclick = () => { const tag = el.dataset.rmser; change(() => { S.route.stops = st.filter(s => s.series !== tag); }, "Series removed.");
+    S.spots = S.spots.filter(x => x.series !== tag || S.route.stops.some(s => s.ref === x.id)); saveSpots(); render(); });
   ol.querySelectorAll("[data-ser]").forEach(el => el.onclick = () => { S.serLeg = S.serLeg === +el.dataset.ser ? null : +el.dataset.ser; render(); });
   document.getElementById("serX")?.addEventListener("click", () => { S.serLeg = null; render(); });
   document.getElementById("serGo")?.addEventListener("click", () => addSeries(S.serLeg, document.getElementById("serBy").value, +document.getElementById("serV").value, document.getElementById("serMode").value));
@@ -793,7 +807,10 @@ function lists() {
   sl.innerHTML = D.ramps.map((r, i) => `<div class="item"><div style="min-width:0"><div class="nm">${esc(r.name)}${r.approx ? ' <span class="tag warn">approx</span>' : ""}</div><div class="sub">${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}</div></div><div class="acts"><button class="btn" data-goramp="${i}">Show</button></div></div>`).join("") +
     S.pins.map(p => `<div class="item"><div style="min-width:0"><input class="field" value="${esc(p.name)}" data-pname="${p.id}" style="width:100%;font-weight:600" aria-label="Pin name"><div class="sub" style="margin-top:4px">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} &middot; ${ddm(p.lat, "N", "S")} ${ddm(p.lon, "E", "W")}</div></div>
       <div class="acts"><button class="btn" data-gopin="${p.id}">Show</button><button class="btn danger" data-rmpin="${p.id}">Delete</button></div></div>`).join("") +
-    `<div class="hint">Use <b>Drop pin</b> on the map to add your own launch or pickup site. Drag any ramp or pin to correct it.</div>`;
+    (S.spots.length ? `<div class="item"><div style="min-width:0"><div class="nm">Sample sites</div><div class="sub">${S.spots.length} on the map &middot; ${S.spots.filter(x => !S.route.stops.some(s => s.ref === x.id)).length} not in this route</div></div><div class="acts"><button class="btn danger" id="rmIdle" title="Delete sample sites that this route does not visit">Delete unused</button></div></div>` : "") +
+    `<div class="hint">Use <b>Drop pin</b> on the map to add your own launch or pickup site, and <b>Sample point</b> to add sample sites. Drag any ramp, pin or site to correct it.</div>`;
+  document.getElementById("rmIdle")?.addEventListener("click", e => { if (e.target.textContent !== "Confirm") { e.target.textContent = "Confirm"; return; }
+    const n = S.spots.length; S.spots = S.spots.filter(x => S.route.stops.some(s => s.ref === x.id)); saveSpots(); render(); toast(`Deleted ${n - S.spots.length} unused sample sites. Saved routes that used them lose those stops.`); });
   sl.querySelectorAll("[data-goramp]").forEach(b => b.onclick = () => { const r = D.ramps[+b.dataset.goramp]; map.setView([r.lat, r.lon], 15); });
   sl.querySelectorAll("[data-gopin]").forEach(b => b.onclick = () => { const p = S.pins.find(x => x.id === b.dataset.gopin); map.setView([p.lat, p.lon], 15); });
   sl.querySelectorAll("[data-pname]").forEach(el => el.onchange = () => { S.pins.find(x => x.id === el.dataset.pname).name = el.value || "Pin"; savePins(); render(); });
@@ -843,7 +860,7 @@ const savePins = () => store.set("rc_pins", S.pins);
 function dirty() { document.getElementById("savedState").textContent = "unsaved changes"; }
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
 function snapshot() { return { ...JSON.parse(JSON.stringify(S.route)), kn: S.kn, launch: document.getElementById("launch").value, date: S.date, cur: S.cur, km: PLAN ? PLAN.km : 0, saved: Date.now() }; }
-function loadRoute(r) { S.route = { id: r.id ?? null, name: r.name || "", stops: JSON.parse(JSON.stringify(r.stops || [])) }; S.history = [];
+function loadRoute(r) { S.route = { id: r.id ?? null, name: r.name || "", stops: migratePts(JSON.parse(JSON.stringify(r.stops || []))) }; S.history = [];
   if (r.kn) S.kn = +r.kn; if (r.launch) { document.getElementById("launch").value = r.launch; S.launch = (([h, m]) => h + m / 60)(r.launch.split(":").map(Number)); }
   document.getElementById("savedState").textContent = r.id ? "saved" : ""; render(); }
 
@@ -932,7 +949,7 @@ function planSheet() {
     <h3>Stops</h3><table><tr><th>#</th><th>Stop</th><th>Action</th><th>Lat / lon (DD)</th><th>Lat / lon (DDM)</th><th>Leg</th><th>Course</th><th>Cum km</th><th>Arrive</th><th>Wind/gust, waves</th><th>Nearest recovery</th></tr>${stopRows}</table>
     <div style="margin-top:4px;color:#6b7280;font-size:10px">Receiver stops are 200 m stand-off points toward deeper water; keep-out ${D.keepout} m around every receiver${D.rx.some(r => r.ext) ? `; external buoys (${D.rx.filter(r => r.ext).map(r => `${r.num} ${SO(r)} m stand-off, ${KO(r)} m keep-out`).join("; ")})` : ""}. Shaded rows fall in darkness. Course = initial true course of the leg.</div>
     ${smpRows ? `<h3>Sample plan</h3><div style="font-size:10.5px;color:#4b5563;margin-bottom:4px">${P.sampling.reps} samples at ${P.sampling.stops} stops${S.samp.blanks ? ` + ${S.samp.blanks} field blanks` : ""} = ${P.sampling.need} cartridges${S.samp.cap > 0 ? ` (${S.samp.cap} on board)` : ""}. Fill in actual time, volume and cartridge on the day; the Sample log CSV has the same rows.</div>
-    <table><tr><th>ID</th><th>Stop</th><th>Mode</th><th>Reps</th><th>Planned</th><th>Position (DDM)</th><th>Actual time</th><th>Volume</th><th>Cartridge</th></tr>${smpRows}</table>` : ""}
+    <table><tr><th>ID</th><th>Stop</th><th>Mode</th><th>Samples</th><th>Planned</th><th>Position (DDM)</th><th>Actual time</th><th>Volume</th><th>Cartridge</th></tr>${smpRows}</table>` : ""}
     <h3>Map</h3>${schematic(P)}
     ${P.mpas.size ? `<div style="margin-top:4px;font-size:10.5px">Marine Protected Areas crossed: ${[...P.mpas].map(esc).join(", ")}</div>` : ""}
     <div class="two"><div><h3>Team and contacts</h3><table><tr><th>Vessel operator</th><td>${esc(ct.op)}</td></tr><tr><th>PI</th><td>${esc(ct.pi)}</td></tr><tr><th>Field lead</th><td>${esc(ct.lead)}</td></tr><tr><th>Radio / comms</th><td>${esc(ct.comms)}</td></tr></table>${ct.notes ? `<p>${esc(ct.notes)}</p>` : ""}</div>
@@ -1019,11 +1036,11 @@ function rows() {          // every point the navigator needs, in order: harbor 
     const s = x.s, pos = stopPos(s), r = s.type === "rx" ? RX[s.ref] : null, isRamp = s.type === "ramp";
     const isPt = s.type === "pt", sid = ids.get(s) || "", rep = +s.rep || 1;
     const kind = s.kind === "start" ? "start" : s.kind === "end" ? "end" : isPt ? (s.kind !== "sample" ? "wp" : isUW(s) ? "sample_uw" : "sample_st") : s.kind === "sample" ? "station" : "pass";
-    if (isPt) { out.push({ name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : "waypoint", lat: s.lat, lon: s.lon, kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
-      note: !sid ? "researcher waypoint" : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} replicate(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} replicate(s)` }); return; }
+    if (isPt) { out.push({ name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : "waypoint", lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
+      note: !sid ? "researcher waypoint" : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)` }); return; }
     const name = r ? `${r.num} ${r.name}${r.live ? " LIVE" : ""}` : isRamp ? `${kind === "start" ? "MISSION START" : "MISSION END"} (outside harbor, ${D.ramps[s.ref].name.replace(/ (launch )?ramp$/i, "")})` : stopName(s);
     out.push({ name, lat: pos[0], lon: pos[1], kind, dwell: s.dwell || 0, eta: i ? x.arr : x.dep, rx: r, sid, rep: sid ? rep : "", smode: sid ? "on_station" : "",
-      note: r ? `${sid ? `eDNA sample ${sid}, ${rep} replicate(s); ` : ""}${r.ext ? `${r.owner} surface buoy, not ours; ` : ""}stand-off ${SO(r)} m from ${r.ext ? "buoy" : "receiver"} at ${r.sbrg} deg; ${r.ext ? "buoy" : "receiver"} ${r.lat.toFixed(5)},${r.lon.toFixed(5)}; keep-out ${KO(r)} m` : isRamp ? "autonomous route starts / ends here" : "" });
+      note: r ? `${sid ? `eDNA sample ${sid}, ${rep} sample(s); ` : ""}${r.ext ? `${r.owner} surface buoy, not ours; ` : ""}stand-off ${SO(r)} m from ${r.ext ? "buoy" : "receiver"} at ${r.sbrg} deg; ${r.ext ? "buoy" : "receiver"} ${r.lat.toFixed(5)},${r.lon.toFixed(5)}; keep-out ${KO(r)} m` : isRamp ? "autonomous route starts / ends here" : "" });
   });
   if (P.harborIn && en.kind === "end") { const r = D.ramps[en.ref]; harbor(P.harborIn.pts, false); out.push({ name: r.name, lat: r.lat, lon: r.lon, kind: "ramp_end", dwell: 0, eta: P.end, note: "recover at ramp" }); }
   return out;
@@ -1033,7 +1050,7 @@ const ACTION = r => ({ ramp: ["MANUAL", "HARBOR"], harbor: ["MANUAL", "HARBOR"],
 const q = s => `"${String(s).replace(/"/g, '""')}"`;
 const exporters = {
   op: () => { const R = rows(), O = S.ops; let cum = 0;
-    const head = "wp,name,action,wp_type,lat_wgs84,lon_wgs84,lat_ddm,lon_ddm,loiter_min,loiter_radius_m,accept_radius_m,speed_kn,course_to_next_deg_true,dist_to_next_m,cum_dist_m,eta_local_pacific,receiver_num,receiver_lat_wgs84,receiver_lon_wgs84,wp_to_receiver_m,receiver_keepout_m,next_leg_min_dist_to_any_receiver_m,sample_id,sample_mode,replicates,note\n";
+    const head = "wp,name,action,wp_type,lat_wgs84,lon_wgs84,lat_ddm,lon_ddm,loiter_min,loiter_radius_m,accept_radius_m,speed_kn,course_to_next_deg_true,dist_to_next_m,cum_dist_m,eta_local_pacific,receiver_num,receiver_lat_wgs84,receiver_lon_wgs84,wp_to_receiver_m,receiver_keepout_m,next_leg_min_dist_to_any_receiver_m,sample_id,sample_mode,n_samples,note\n";
     dl(slug() + "_operator.csv", head + R.map((r, i) => { const nx = R[i + 1], [act, typ] = ACTION(r), loit = act === "LOITER", dn = nx ? dist([r.lat, r.lon], [nx.lat, nx.lon]) : 0;
       const row = [i + 1, q(r.name), act, typ, r.lat.toFixed(6), r.lon.toFixed(6), q(ddm(r.lat, "N", "S")), q(ddm(r.lon, "E", "W")), loit ? Math.round(r.dwell * 60) : "", loit ? O.loiter : "", O.accept, typ === "HARBOR" ? Math.min(S.kn, 3) : S.kn,
         nx ? bearing([r.lat, r.lon], [nx.lat, nx.lon]).toFixed(0) : "", nx ? dn.toFixed(0) : "", cum.toFixed(0), r.eta != null ? q(`${S.date} ${when(r.eta)}`) : "",
@@ -1060,36 +1077,39 @@ ${R.filter(r => r.kind !== "via").map(r => `<Placemark><name>${esc(r.name)}</nam
       ...D.mpas.map(m => ({ type: "Feature", properties: { kind: "Marine Protected Area", name: m.name, type: m.type }, geometry: { type: "MultiPolygon", coordinates: m.rings.map(r => [r]) } }))] }), "application/geo+json"); },
   samples: () => { const R = rows().filter(r => r.sid), B = +S.samp.blanks || 0;
     if (!R.length) { toast("No sampling stops in this route yet."); return; }
-    const head = "sample_id,route,date,stop,mode,replicates,planned_time_local,planned_lat_wgs84,planned_lon_wgs84,planned_lat_ddm,planned_lon_ddm,hold_min,actual_start_time,actual_end_time,actual_lat,actual_lon,volume_filtered_l,cartridge_ids,collected_by,notes\n";
+    const head = "sample_id,route,date,stop,mode,n_samples,planned_time_local,planned_lat_wgs84,planned_lon_wgs84,planned_lat_ddm,planned_lon_ddm,hold_min,actual_start_time,actual_end_time,actual_lat,actual_lon,volume_filtered_l,cartridge_ids,collected_by,notes\n";
     dl(slug() + "_samples.csv", head + R.map(r => [r.sid, q(S.route.name || ""), S.date, q(r.name), r.smode, r.rep, r.eta != null ? q(when(r.eta)) : "", r.lat.toFixed(6), r.lon.toFixed(6), q(ddm(r.lat, "N", "S")), q(ddm(r.lon, "E", "W")), r.smode === "on_station" ? Math.round(r.dwell * 60) : "", "", "", "", "", "", "", "", ""].join(",")).join("\n") + "\n" +
       Array.from({ length: B }, (_, k) => [`BLANK${k + 1}`, q(S.route.name || ""), S.date, "field blank", "blank", 1, "", "", "", "", "", "", "", "", "", "", "", "", "", ""].join(",") + "\n").join(""), "text/csv"); },
-  json: () => dl(slug() + ".json", JSON.stringify({ ...snapshot(), pins: S.pins.filter(p => S.route.stops.some(s => s.type === "pin" && s.ref === p.id)) }, null, 1), "application/json"),
+  json: () => dl(slug() + ".json", JSON.stringify({ ...snapshot(), pins: S.pins.filter(p => S.route.stops.some(s => s.type === "pin" && s.ref === p.id)), sampleSites: S.spots.filter(x => S.route.stops.some(s => s.type === "pt" && s.ref === x.id)) }, null, 1), "application/json"),
 };
 
 // ---------- share link ----------
 const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
 function shareLink() { const pins = S.pins.filter(p => S.route.stops.some(s => s.type === "pin" && s.ref === p.id)), T = { rx: "x", ramp: "r", pin: "p" };
-  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.type === "pt" ? [s.lat, s.lon, s.mode === "underway" ? 1 : 0, s.series || ""] : s.ref, s.kind === "sample" ? "s" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1]),
+  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.ref, s.kind === "sample" ? "s" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1, s.mode === "underway" ? 1 : 0, s.series || ""]),
+                 q: S.spots.filter(x => S.route.stops.some(s => s.type === "pt" && s.ref === x.id)).map(x => [x.id, x.lat, x.lon, x.series || ""]),
                  k: S.kn, d: S.date, l: document.getElementById("launch").value, c: S.cur, p: pins.map(p => [p.id, p.name, p.lat, p.lon]) };
   return location.href.split("#")[0] + "#r=" + b64e(JSON.stringify(data)); }
 function readLink() { const m = location.hash.match(/#r=([\w-]+)/); if (!m) return;
   try { const d = JSON.parse(b64d(m[1])), T = { x: "rx", r: "ramp", p: "pin" }, Pr = { h: "high", m: "med", l: "low" };
     (d.p || []).forEach(([id, name, lat, lon]) => { if (!S.pins.some(x => x.id === id)) S.pins.push({ id, name, lat, lon }); }); savePins();
-    const st = d.s.map(([t, ref, k, dw, pr, rep], i) => t === "t" ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
+    (d.q || []).forEach(([id, lat, lon, ser]) => { if (!S.spots.some(x => x.id === id)) S.spots.push({ id, lat, lon, ...(ser ? { series: ser } : {}) }); }); saveSpots();
+    const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser], i) => t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
+        : { type: "pt", ref, mode: uw ? "underway" : "station", ...(ser ? { series: ser } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 })
       : { type: T[t], ref, dwell: dw, prio: Pr[pr], rep: rep || 1, kind: T[t] === "rx" ? (k === "s" ? "sample" : "pass") : i === 0 ? "start" : "end" });
-    S.route = { id: null, name: d.n || "Shared route", stops: st };
+    S.route = { id: null, name: d.n || "Shared route", stops: migratePts(st) };
     if (d.k) S.kn = d.k; if (d.d) S.date = d.d; if (d.l) { document.getElementById("launch").value = d.l; S.launch = (([h, mm]) => h + mm / 60)(d.l.split(":").map(Number)); } if (d.c) S.cur = d.c;
     toast(`Opened shared route "${S.route.name}". Save it to keep it.`); dirty(); } catch (e) { toast("That link does not contain a readable route."); }
 }
 
 // ---------- settings ----------
 const SETTINGS = [["limWind", "limits", "wind"], ["limGust", "limits", "gust"], ["limHs", "limits", "hs"], ["limBack", "limits", "back"], ["limBackT", "limits", "backT"], ["limDaySample", "limits", "daySample"], ["avoidKelp", "limits", "avoidKelp"], ["waveLoss", "limits", "waveLoss"],
-  ["enCap", "energy", "cap"], ["enSolar", "energy", "solar"], ["enHotel", "energy", "hotel"], ["enSampler", "energy", "sampler"], ["enHold", "energy", "hold"], ["xtrack", "energy", "xtrack"], ["opAccept", "ops", "accept"], ["opLoiter", "ops", "loiter"], ["opDensify", "ops", "densify"], ["spMin", "samp", "minPer"], ["spCap", "samp", "cap"], ["spBlanks", "samp", "blanks"],
+  ["enCap", "energy", "cap"], ["enSolar", "energy", "solar"], ["enHotel", "energy", "hotel"], ["enSampler", "energy", "sampler"], ["enHold", "energy", "hold"], ["xtrack", "energy", "xtrack"], ["opAccept", "ops", "accept"], ["opLoiter", "ops", "loiter"], ["opDensify", "ops", "densify"], ["spMin", "samp", "minPer"], ["spReps", "samp", "reps"], ["spCap", "samp", "cap"], ["spBlanks", "samp", "blanks"],
   ["ctOp", "contacts", "op"], ["ctPi", "contacts", "pi"], ["ctLead", "contacts", "lead"], ["ctComms", "contacts", "comms"], ["ctNotes", "contacts", "notes"]];
 function settingsUI() { SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id); if (el.type === "checkbox") el.checked = !!S[g][k]; else el.value = S[g][k]; }); }
 SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id);
-  el.onchange = () => { S[g][k] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; store.set("rc_" + g, S[g]); if (k === "avoidKelp") buildFree(); if (g !== "contacts") render(); }; });
+  el.onchange = () => { S[g][k] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; store.set(g === "samp" ? "rc_samp2" : "rc_" + g, S[g]); if (k === "avoidKelp") buildFree(); if (g !== "contacts") render(); }; });
 
 // ---------- layers ----------
 const LAYER_UI = { kelp: "Kelp canopy (CDFW 2016)", mpa: "Marine Protected Areas", arrows: "Direction arrows", labels: "Receiver labels", track: "Imported GPS track" };
@@ -1117,7 +1137,7 @@ document.getElementById("newr").onclick = () => { S.route = { id: null, name: ""
 document.getElementById("rname").oninput = e => { S.route.name = e.target.value; dirty(); };
 document.querySelectorAll("[data-x]").forEach(b => b.onclick = () => { if (!PLAN || PLAN.times.length < 2) { toast("Build a route with at least two stops first."); return; } exporters[b.dataset.x](); });
 document.getElementById("imp").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { try { const r = JSON.parse(t);
-  (r.pins || []).forEach(p => { if (!S.pins.some(x => x.id === p.id)) S.pins.push(p); }); savePins(); loadRoute({ ...r, id: null }); dirty(); toast("Route imported. Save it to keep it."); }
+  (r.pins || []).forEach(p => { if (!S.pins.some(x => x.id === p.id)) S.pins.push(p); }); savePins(); (r.sampleSites || []).forEach(p => { if (!S.spots.some(x => x.id === p.id)) S.spots.push(p); }); saveSpots(); loadRoute({ ...r, id: null }); dirty(); toast("Route imported. Save it to keep it."); }
   catch (err) { toast("That file is not a route JSON exported from this page."); } }); e.target.value = ""; };
 document.getElementById("impTrack").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { try { S.track = parseTrack(t, f.name); S.layers.track = true; layersUI(); render();
   map.fitBounds(S.track.pts.map(p => [p.lat, p.lon]), { padding: [40, 40] }); trackReport(); } catch (err) { toast(`Could not read the track: ${err}`); } }); e.target.value = ""; };
