@@ -85,7 +85,8 @@ ol.stops li.removed { opacity:.45; }
 .time .n { display:block; font:600 10px Inter; color:var(--nightInk); }
 .legmeta { font-size:11px; color:var(--dim); padding:0 10px 0 44px; }
 .legmeta .w { color:var(--amber); } .legmeta .k { color:var(--kelp); }
-.list { display:grid; gap:4px; }
+.list { display:grid; gap:4px; } .list.scroll { max-height:236px; overflow-y:auto; }
+.item .acts { flex-wrap:wrap; justify-content:flex-end; } #routes .item { grid-template-columns:minmax(0,1fr); } #routes .item .acts { justify-content:flex-start; } .tag.team { background:rgba(94,162,255,.15); color:var(--route); }
 .item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:7px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; font-size:13px; }
 .item .acts { display:flex; gap:4px; } .item.cur { border-color:var(--route2); }
 details.grp { border:1px solid var(--line); border-radius:12px; background:var(--card); margin-bottom:10px; }
@@ -227,6 +228,10 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div class="row"><input class="field" id="rname" style="flex:1" placeholder="Route name"><button class="btn primary" id="save">Save</button><button class="btn" id="newr">New</button></div>
       <div class="row" style="margin-top:8px"><button class="btn accent" id="openSheet">&#128196; Plan sheet / PDF</button><button class="btn accent" id="openFinder">&#128197; Best launch time</button><button class="btn" id="share">&#128279; Copy link</button></div>
     </div>
+    <div class="sec routesec">
+      <div class="label">Team routes <span id="teamState">loading&hellip;</span></div><div class="list scroll" id="teamRoutes"></div>
+      <div class="label" style="margin-top:12px">My routes <span>this browser only &middot; <button class="linkbtn" id="exportAll" title="Download all your saved routes as one file">Export all</button></span></div><div class="list scroll" id="routes"></div>
+    </div>
     <div class="sec" id="statusBox"></div>
     <div class="sec">
       <div class="grid2">
@@ -294,7 +299,6 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <div class="sec"><div class="label">Export this route</div>
       <div class="row"><button class="btn" data-x="op">Operator CSV</button><button class="btn" data-x="samples">Sample log CSV</button><button class="btn" data-x="gpx">GPX</button><button class="btn" data-x="kml">KML</button><button class="btn" data-x="csv">Planner CSV</button><button class="btn" data-x="json">JSON</button><button class="btn" data-x="keepout">Keep-out zones</button></div>
       <div class="row" style="margin-top:8px"><label class="btn">Import route JSON<input type="file" id="imp" accept=".json" hidden></label><label class="btn">Import GPS track (GPX / CSV)<input type="file" id="impTrack" accept=".gpx,.csv,.txt" hidden></label><button class="btn" id="trackBtn" hidden>Track vs plan</button></div></div>
-    <div class="sec"><div class="label">Saved routes <span>stored in this browser</span></div><div class="list" id="routes"></div></div>
     <div class="sec"><div class="label">Launch / pickup sites</div><div class="list" id="sites"></div></div>
     <details class="grp"><summary>How routes, times and battery are calculated</summary><div class="body small" style="line-height:1.55">
       <div>Each leg is the shortest path through water deeper than 3 m (NOAA CRM bathymetry, ~90 m grid) that stays at least 150 m from every
@@ -808,8 +812,19 @@ function segs() {
 function lists() {
   const rl = document.getElementById("routes");
   rl.innerHTML = S.routes.length ? S.routes.map(r => `<div class="item ${r.id === S.route.id ? "cur" : ""}"><div style="min-width:0"><div class="nm">${esc(r.name || "Untitled")}</div><div class="sub">${r.stops.length} stops &middot; ${r.km ? r.km.toFixed(1) + " km" : ""} &middot; ${new Date(r.saved).toLocaleDateString()}</div></div>
-      <div class="acts"><button class="btn" data-load="${r.id}">Open</button><button class="btn" data-dup="${r.id}">Copy</button><button class="btn danger" data-del="${r.id}">Delete</button></div></div>`).join("")
-    : `<div class="hint">Saved routes appear here. They stay in this browser; use Export JSON or Copy link to move them.</div>`;
+      <div class="acts"><button class="btn" data-load="${r.id}">Open</button><button class="btn" data-dup="${r.id}">Copy</button><button class="btn" data-team="${r.id}" title="Publish this route so everyone who opens the planner sees it">Share with team</button><button class="btn danger" data-del="${r.id}">Delete</button></div></div>`).join("")
+    : `<div class="hint">Routes you save appear here. They stay in this browser; <b>Share with team</b> publishes one for everyone.</div>`;
+  rl.querySelectorAll("[data-team]").forEach(b => b.onclick = () => shareTeam(S.routes.find(x => x.id === b.dataset.team)));
+  const tl = document.getElementById("teamRoutes"), ts = document.getElementById("teamState");
+  ts.textContent = TEAM.state === "ok" ? `${TEAM.list.length} shared` : TEAM.state === "err" ? "could not load" : "loading…";
+  tl.innerHTML = TEAM.state === "err" ? `<div class="hint">Team routes could not be loaded (offline, or GitHub is limiting requests). <button class="linkbtn" id="teamRetry">Try again</button></div>`
+    : TEAM.state !== "ok" ? "" : TEAM.list.length ? TEAM.list.map((r, i) => `<div class="item"><div style="min-width:0"><div class="nm">${esc(r.name || "Untitled")}</div><div class="sub">${(r.stops || []).length} stops${r.km ? ` &middot; ${r.km.toFixed(1)} km` : ""}${r.kn ? ` &middot; ${r.kn} kn` : ""}${r.saved ? ` &middot; ${new Date(r.saved).toLocaleDateString()}` : ""}</div></div>
+      <div class="acts"><button class="btn primary" data-topen="${i}">Open</button><a class="btn" href="${esc(r._url)}" target="_blank" rel="noopener" title="View, edit or delete this file on GitHub">GitHub</a></div></div>`).join("")
+    : `<div class="hint">No team routes yet. Save a route, then press <b>Share with team</b> under My routes.</div>`;
+  tl.querySelectorAll("[data-topen]").forEach(b => b.onclick = () => openTeam(TEAM.list[+b.dataset.topen]));
+  document.getElementById("teamRetry")?.addEventListener("click", loadTeam);
+  document.getElementById("exportAll").onclick = () => { if (!S.routes.length) { toast("No saved routes yet."); return; }
+    dl(`my_routes_${ymd(new Date())}.json`, JSON.stringify({ routes: S.routes.map(routeFile) }, null, 1), "application/json"); toast(`${S.routes.length} routes exported.`); };
   rl.querySelectorAll("[data-load]").forEach(b => b.onclick = () => { const r = S.routes.find(x => x.id === b.dataset.load); loadRoute(r); toast(`Opened "${r.name}"`); });
   rl.querySelectorAll("[data-dup]").forEach(b => b.onclick = () => { const r = S.routes.find(x => x.id === b.dataset.dup); loadRoute({ ...r, id: null, name: r.name + " (copy)" }); dirty(); });
   rl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { if (b.textContent !== "Confirm") { b.textContent = "Confirm"; return; }
@@ -881,6 +896,31 @@ function siteMenu(ll, title, label, fn) {   // small popup on a pin / sample sit
 function dirty() { document.getElementById("savedState").textContent = "unsaved changes"; }
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
 function snapshot() { return { ...JSON.parse(JSON.stringify(S.route)), kn: S.kn, launch: document.getElementById("launch").value, date: S.date, cur: S.cur, km: PLAN ? PLAN.km : 0, saved: Date.now() }; }
+// ---------- team routes: JSON files in the site's GitHub repo (routes/), readable by everyone, added by anyone with write access ----------
+const TEAM = { repo: "PeterMastnak/glider-mission-planner", branch: "main", dir: "routes", state: "loading", list: [] };
+async function loadTeam() {
+  TEAM.state = "loading"; if (PLAN) lists();
+  try { const r = await fetch(`https://api.github.com/repos/${TEAM.repo}/contents/${TEAM.dir}?ref=${TEAM.branch}`, { cache: "no-store" });
+    if (r.status === 404) { TEAM.list = []; TEAM.state = "ok"; lists(); return; } if (!r.ok) throw new Error(r.status);
+    const files = (await r.json()).filter(f => f.type === "file" && f.name.endsWith(".json"));
+    const got = await Promise.all(files.map(f => fetch(f.download_url, { cache: "no-store" }).then(x => x.json()).then(j => ({ ...j, _url: f.html_url, _file: f.name })).catch(() => null)));
+    TEAM.list = got.filter(j => j && Array.isArray(j.stops)).sort((a, b) => (b.saved || 0) - (a.saved || 0)); TEAM.state = "ok";
+  } catch (e) { TEAM.state = "err"; }
+  lists(); }
+function routeFile(r) {    // a route plus the pins and sample sites it uses, so it opens anywhere
+  const used = t => new Set((r.stops || []).filter(s => s.type === t).map(s => s.ref));
+  const { id, ...rest } = r; return { ...rest, pins: S.pins.filter(p => used("pin").has(p.id)), sampleSites: S.spots.filter(x => used("pt").has(x.id)) }; }
+function openTeam(t) {
+  (t.pins || []).forEach(p => { if (!S.pins.some(x => x.id === p.id)) S.pins.push(p); }); savePins();
+  (t.sampleSites || []).forEach(p => { if (!S.spots.some(x => x.id === p.id)) S.spots.push(p); }); saveSpots();
+  const { _url, _file, ...r } = t; loadRoute({ ...r, id: null }); if (r.cur) S.cur = r.cur; dirty(); toast(`Opened team route "${r.name}". Save it to keep your own copy.`); }
+function shareTeam(r) {
+  const body = JSON.stringify({ ...routeFile(r), sharedFrom: "Glider Mission Planner" }, null, 1);
+  const fname = `${(r.name || "route").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "route"}-${ymd(new Date())}.json`;
+  const url = `https://github.com/${TEAM.repo}/new/${TEAM.branch}/${TEAM.dir}?filename=${encodeURIComponent(fname)}&value=${encodeURIComponent(body)}`;
+  if (url.length < 7800) { window.open(url, "_blank", "noopener"); toast("GitHub opened with the route filled in: press Commit changes. It shows under Team routes for everyone within a few minutes."); }
+  else { dl(fname, body, "application/json"); window.open(`https://github.com/${TEAM.repo}/upload/${TEAM.branch}/${TEAM.dir}`, "_blank", "noopener"); toast("Route file downloaded (too long for a link): drag it onto the GitHub upload page that just opened and press Commit changes."); }
+}
 function loadRoute(r) { S.route = { id: r.id ?? null, name: r.name || "", stops: migratePts(JSON.parse(JSON.stringify(r.stops || []))) }; S.history = [];
   if (r.kn) S.kn = +r.kn; if (r.launch) { document.getElementById("launch").value = r.launch; S.launch = (([h, m]) => h + m / 60)(r.launch.split(":").map(Number)); }
   document.getElementById("savedState").textContent = r.id ? "saved" : ""; render(); }
@@ -1228,6 +1268,9 @@ document.getElementById("newr").onclick = () => { S.route = { id: null, name: ""
 document.getElementById("rname").oninput = e => { S.route.name = e.target.value; dirty(); };
 document.querySelectorAll("[data-x]").forEach(b => b.onclick = () => { if (!PLAN || PLAN.times.length < 2) { toast("Build a route with at least two stops first."); return; } exporters[b.dataset.x](); });
 document.getElementById("imp").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { try { const r = JSON.parse(t);
+  if (Array.isArray(r.routes)) { r.routes.forEach(x => { (x.pins || []).forEach(p => { if (!S.pins.some(y => y.id === p.id)) S.pins.push(p); }); (x.sampleSites || []).forEach(p => { if (!S.spots.some(y => y.id === p.id)) S.spots.push(p); });
+      S.routes.unshift({ ...x, id: "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), stops: migratePts(x.stops || []), saved: x.saved || Date.now() }); });
+    savePins(); saveSpots(); store.set("rc_routes", S.routes); render(); toast(`${r.routes.length} routes added to My routes.`); return; }
   (r.pins || []).forEach(p => { if (!S.pins.some(x => x.id === p.id)) S.pins.push(p); }); savePins(); (r.sampleSites || []).forEach(p => { if (!S.spots.some(x => x.id === p.id)) S.spots.push(p); }); saveSpots(); loadRoute({ ...r, id: null }); dirty(); toast("Route imported. Save it to keep it."); }
   catch (err) { toast("That file is not a route JSON exported from this page."); } }); e.target.value = ""; };
 document.getElementById("impTrack").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { try { S.track = parseTrack(t, f.name); S.layers.track = true; layersUI(); render();
@@ -1253,6 +1296,6 @@ playBtn.onclick = () => { if (timer) { clearInterval(timer); timer = null; playB
 document.getElementById("theme").onclick = () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === "dark" ? "light" : "dark";
   render(); };
 L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
-settingsUI(); buildFree(); layersUI(); setBase("ocean"); readLink(); dateEl.value = S.date;
+settingsUI(); buildFree(); layersUI(); setBase("ocean"); readLink(); dateEl.value = S.date; loadTeam();
 (async () => { if (S.cur === "live") await ensureWx(S.date); render(); })();
 </script></body></html>
