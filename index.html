@@ -947,6 +947,29 @@ function schematic(P) {
   g += `</g><rect x="10" y="${H - 22}" width="${px}" height="5" fill="#111"/><text x="10" y="${H - 26}" font-size="10">${km} km</text><text x="${W - 10}" y="16" font-size="12" font-weight="700" text-anchor="end">N &#8593;</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
 }
+function socSheet(P) {    // print version of "Battery over the mission": light colours, sampling periods and darkness shaded
+  const E = P.energy; if (!E.pts.length) return "";
+  const W = 760, H = 230, m = { l: 44, r: 14, t: 22, b: 26 }, t0 = P.launch, t1 = Math.max(P.end, t0 + 1), ids = sampleIds();
+  const X = t => m.l + (t - t0) / (t1 - t0) * (W - m.l - m.r), Y = v => m.t + (1 - Math.max(0, Math.min(1, v))) * (H - m.t - m.b);
+  let g = "";
+  for (let d = 0; d < 3; d++) { const [r, ss] = sunHours(addDays(S.date, d)), a = Math.max(t0, ss + 24 * d), b = Math.min(t1, sunHours(addDays(S.date, d + 1))[0] + 24 * (d + 1));
+    if (b > a) g += `<rect x="${X(a)}" y="${m.t}" width="${X(b) - X(a)}" height="${H - m.t - m.b}" fill="#e0e7ff"/><text x="${(X(a) + X(b)) / 2}" y="${m.t + 12}" font-size="9" fill="#4338ca" text-anchor="middle">dark</text>`; }
+  P.times.forEach(x => { if (x.s.kind === "sample" && x.dwell > 0) g += `<rect x="${X(x.arr)}" y="${m.t}" width="${Math.max(1.5, X(x.dep) - X(x.arr))}" height="${H - m.t - m.b}" fill="#f5d0fe"/><text x="${(X(x.arr) + X(x.dep)) / 2}" y="${m.t - 6}" font-size="9" font-weight="700" fill="#86198f" text-anchor="middle">${ids.get(x.s) || ""}</text>`; });
+  P.uw.forEach(([a, b, st]) => g += `<rect x="${X(a)}" y="${H - m.b - 6}" width="${Math.max(1.5, X(Math.min(b, t1)) - X(a))}" height="6" fill="#e879f9"/>`);
+  [0, .25, .5, .75, 1].forEach(v => g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e5e7eb"/><text x="${m.l - 6}" y="${Y(v) + 3}" font-size="10" fill="#6b7280" text-anchor="end">${v * 100} %</text>`);
+  g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(.2)}" y2="${Y(.2)}" stroke="#dc2626" stroke-dasharray="4 3"/><text x="${W - m.r - 2}" y="${Y(.2) - 3}" font-size="9" fill="#dc2626" text-anchor="end">20 % reserve</text>`;
+  const step = t1 - t0 > 10 ? 2 : 1;
+  for (let h = Math.ceil(t0 / step) * step; h <= t1; h += step) g += `<line x1="${X(h)}" x2="${X(h)}" y1="${H - m.b}" y2="${H - m.b + 4}" stroke="#9ca3af"/><text x="${X(h)}" y="${H - m.b + 15}" font-size="10" fill="#374151" text-anchor="middle">${hm(h)}</text>`;
+  g += `<polyline fill="none" stroke="${E.minSoc < .2 ? "#dc2626" : "#15803d"}" stroke-width="2.4" points="${E.pts.map(([t, v]) => `${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}"/>`;
+  const lo = E.pts.reduce((a, b) => b[1] < a[1] ? b : a), en = E.pts[E.pts.length - 1];
+  const empty = E.pts.find(([, v]) => v <= 0);
+  if (empty) g += `<line x1="${X(empty[0])}" x2="${X(empty[0])}" y1="${m.t}" y2="${H - m.b}" stroke="#dc2626" stroke-width="1.5"/><text x="${X(empty[0]) + 4}" y="${Y(.5)}" font-size="10" font-weight="700" fill="#dc2626">battery empty at ${hm(empty[0])}</text>`;
+  const pc = v => Math.round(Math.max(0, v) * 100), xl = X(lo[0]), anc = xl > W - 150 ? "end" : xl < m.l + 90 ? "start" : "middle", dy = lo[1] < .15 ? -8 : 15;
+  if (en[0] - lo[0] < 0.25) g += `<circle cx="${xl}" cy="${Y(lo[1])}" r="3.5" fill="#111"/><text x="${xl - 6}" y="${Y(lo[1]) + dy}" font-size="10" font-weight="700" fill="#111" text-anchor="end">back ${pc(en[1])} % (lowest)</text>`;
+  else g += `<circle cx="${xl}" cy="${Y(lo[1])}" r="3.5" fill="#111"/><text x="${xl}" y="${Y(lo[1]) + dy}" font-size="10" font-weight="700" fill="#111" text-anchor="${anc}">lowest ${pc(lo[1])} % at ${hm(lo[0])}</text>
+    <text x="${X(en[0]) - 4}" y="${Y(en[1]) - 6}" font-size="10" fill="#111" text-anchor="end">back ${pc(en[1])} %</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:#fff">${g}</svg>`;
+}
 function nearestSite(pos) {
   const sites = [...D.ramps.map(r => ({ name: r.name, p: [r.lat, r.lon] })), ...S.pins.map(p => ({ name: p.name, p: [p.lat, p.lon] }))];
   let best = null; sites.forEach(s => { const r = findPath(pos, s.p); if (!r.ok) return; const L = plen(r.pts); if (!best || L < best.L) best = { ...s, L }; }); return best;
@@ -1014,6 +1037,9 @@ function planSheet() {
     <h3>Navigation waypoints for the operator</h3>
     <div style="font-size:10.5px;color:#4b5563;margin-bottom:4px">WGS84 decimal degrees. Shaded rows are the harbor transit, driven by the operator; the autonomous route runs MISSION START to MISSION END. GOTO = steer to the point, LOITER = hold within ${S.ops.loiter} m for the time shown. A waypoint counts as reached within ${S.ops.accept} m. Course is true.</div>
     <table><tr><th>WP</th><th>Name</th><th>Action</th><th>DD</th><th>DDM</th><th>Course to next</th><th>Distance to next</th><th>ETA</th></tr>${wpRows}</table>
+    ${P.energy.pts.length ? `<div style="break-inside:avoid"><h3>Battery over the mission</h3>${socSheet(P)}
+    <div style="margin-top:4px;color:#6b7280;font-size:10px">State of charge of the ${S.energy.cap} kWh pack in 5-minute steps, including solar. Magenta bands = sampling stops (thin bar at the bottom = sampling while moving); blue = darkness; dashed red = 20 % reserve.</div>
+    <div style="margin-top:6px;padding:6px 9px;border:1px solid #fcd34d;background:#fffbeb;border-radius:6px;font-size:10.5px;color:#78350f"><b>Estimate only.</b> The battery size, cruise power and sampler power come from what Open Ocean Robotics and McLane publish online; power at other speeds, holding position and electronics are our assumptions. Ask the operator for the real pack size and consumption and update them under Vessel and battery; this chart and the battery numbers update with them.</div></div>` : ""}
     <div style="break-inside:avoid"><h3>How this plan was calculated</h3>
     <ul class="methods">
       <li><b>Route.</b> Each leg is the shortest path through water deeper than ${D.minDepth} m (NOAA Coastal Relief Model, ~90 m grid), straightened so it only bends around land, shallows or a keep-out${S.limits.avoidKelp ? ", and routed around mapped kelp" : ""}. It stays more than ${D.keepout} m from every receiver${D.rx.some(r => r.ext) ? ` and ${D.rx.filter(r => r.ext).map(r => `${KO(r)} m from ${esc(r.name)}`).join(", ")}` : ""}. Receiver waypoints are ${D.standoff} m from the receiver toward deeper water${D.rx.some(r => r.ext) ? ` (${D.rx.filter(r => r.ext).map(r => `${SO(r)} m for ${esc(r.name)}`).join(", ")})` : ""}. Harbor transits are fixed paths checked on satellite imagery and driven by the operator at up to 3 kn; the autonomous route runs from MISSION START to MISSION END.</li>
