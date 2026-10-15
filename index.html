@@ -443,7 +443,7 @@ function harborPath(s, out) {   // operator-driven transit ramp -> mission start
 function stopName(s) { if (s.type === "rx") { const r = RX[s.ref]; return `#${r.num} ${r.name}`; }
   if (s.type === "pt") return s.kind !== "sample" ? "Waypoint" : `${sampleIds().get(s) || ""} ${s.mode === "underway" ? "sample under way" : "sample point"}`.trim();
   if (s.type === "ramp") return D.ramps[s.ref].name; const p = S.pins.find(p => p.id === s.ref); return p ? p.name : "(deleted pin)"; }
-function change(fn, msg) { S.history.push(JSON.stringify(S.route.stops)); if (S.history.length > 60) S.history.shift(); fn(); dirty(); render(); if (msg) toast(msg); }
+function change(fn, msg) { S.history.push(JSON.stringify({ st: S.route.stops, sp: S.spots })); if (S.history.length > 60) S.history.shift(); fn(); dirty(); render(); if (msg) toast(msg); }
 function addSite(type, ref) { const st = S.route.stops;
   if (st.length && st[0].kind !== "start") { change(() => st.unshift({ type, ref, kind: "start", dwell: 0 }), "New start set."); return; }
   change(() => { if (!st.length) st.push({ type, ref, kind: "start", dwell: 0 });
@@ -773,7 +773,11 @@ function render() {
     const rep = Math.max(1, Math.round(m / S.samp.minPer));     // time on station and samples are tied: one sample = minutes per sample
     change(() => { s.rep = rep; s.dwell = rep * S.samp.minPer / 60; }, rep * S.samp.minPer !== m ? `${rep} sample${rep > 1 ? "s" : ""} = ${rep * S.samp.minPer} min (one sample takes ${S.samp.minPer} min).` : null); });
   ol.querySelectorAll("[data-prio]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.prio].prio = el.value; }));
-  ol.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => change(() => st.splice(+el.dataset.rm, 1)));
+  ol.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => { const s = st[+el.dataset.rm];
+    // removing a sample stop also deletes its map site, unless another stop in this route or a saved route still visits it
+    const keep = s.type === "pt" && (st.some(x => x !== s && x.type === "pt" && x.ref === s.ref) || S.routes.some(r => r.id !== S.route.id && (r.stops || []).some(x => x.type === "pt" && x.ref === s.ref)));
+    change(() => { st.splice(+el.dataset.rm, 1); if (s.type === "pt" && !keep) { S.spots = S.spots.filter(x => x.id !== s.ref); saveSpots(); } },
+      s.type === "pt" ? (keep ? "Stop removed. Its site stays on the map: another route uses it." : "Stop and its sample site removed. Undo brings both back.") : null); });
   ol.querySelectorAll("[data-pkind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.pkind];
     if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? s.rep * S.samp.minPer / 60 : 0; } }));
   ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
@@ -1143,7 +1147,7 @@ map.on("click", e => { if (S.mode === "sample") { addPt(e.latlng.lat, e.latlng.l
   S.pins.push(p); savePins(); render(); toast(`${p.name} at ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}. Rename it in the panel; switch to Build route to use it.`); });
 map.on("zoomend", () => { drawStatic(); if (PLAN) drawRoute(PLAN); });
 document.getElementById("toolbar").querySelectorAll("[data-m]").forEach(b => b.onclick = () => { S.mode = b.dataset.m; render(); });
-const undo = () => { if (!S.history.length) { toast("Nothing to undo."); return; } S.route.stops = JSON.parse(S.history.pop()); dirty(); render(); };
+const undo = () => { if (!S.history.length) { toast("Nothing to undo."); return; } const h = JSON.parse(S.history.pop()); if (Array.isArray(h)) S.route.stops = h; else { S.route.stops = h.st; S.spots = h.sp; saveSpots(); } dirty(); render(); };
 document.getElementById("undo").onclick = undo;
 document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "z" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); undo(); }
   if (e.key === "Escape") document.querySelectorAll(".modal").forEach(m => m.hidden = true); });
