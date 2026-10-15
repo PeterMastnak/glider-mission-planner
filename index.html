@@ -156,6 +156,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
 #sheet .go { color:#15803d; } #sheet .check { color:#b45309; } #sheet .nogo { color:#b91c1c; } #sheet .night { background:#eef2ff; }
 #sheet svg { width:100%; height:auto; border:1px solid #d1d5db; border-radius:6px; background:#f8fafc; }
 #sheet .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+#sheet .methods { margin:0; padding-left:16px; font-size:10.5px; line-height:1.5; color:#374151; } #sheet .methods li { margin-bottom:4px; }
 @media print {
   @page { size: letter portrait; margin: 0.4in; }
   html, body { height:auto; background:#fff !important; }
@@ -298,8 +299,8 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <details class="grp"><summary>How routes, times and battery are calculated</summary><div class="body small" style="line-height:1.55">
       <div>Each leg is the shortest path through water deeper than 3 m (NOAA CRM bathymetry, ~90 m grid) that stays at least 150 m from every
       receiver (550 m from the MBARI M1 buoy) (and out of kelp if you choose), straightened so it only bends where something is in the way. Receiver stops are the stand-off
-      point 200 m from the receiver toward deeper water. A ramp inside a harbor joins the nearest grid water cell with a short straight line, so
-      check harbor exits by eye.</div>
+      point 200 m from the receiver toward deeper water. Harbor transits are fixed paths checked on satellite
+      imagery and driven by the operator; the autonomous route starts and ends just outside the harbor.</div>
       <div><b>Still water</b>: distance (plus route-following overhead) / speed. <b>Live forecast</b>: Open-Meteo, Copernicus surface currents
       (~8 km, tides included), 10 m wind and gusts, waves and cloud cover, stepped every 300 m at the hour the vessel is there. The vessel crabs
       into the cross-current; current plus 2&nbsp;% of the wind adds to or subtracts from its speed along the track; waves slow it only by the
@@ -980,7 +981,8 @@ function planSheet() {
     return `<tr><td><b>#${r.num} ${esc(r.name)}</b>${r.live ? " (live)" : ""}${r.ext ? ` (${esc(r.owner)} buoy, not ours)` : ""}</td><td class="m">${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}</td><td class="m">${w.lat.toFixed(6)}, ${w.lon.toFixed(6)}</td><td class="m">${d.toFixed(0)} m @ ${r.sbrg}&deg;</td><td class="m">${app.toFixed(0)} m</td><td class="${ok ? "go" : "nogo"}"><b>${ok ? "OK" : "CHECK"}</b></td><td style="width:70px"></td><td style="width:70px"></td></tr>`; }).join("");
   let sn = 0; const stopNo = new Map(); P.times.forEach(x => { if (isMid(x.s)) stopNo.set(ids.get(x.s), ++sn); });
   const smpRows = R.filter(w => w.sid).map(w => `<tr><td><b>${w.sid}</b></td><td class="m">${stopNo.get(w.sid) ?? ""}</td><td>${w.rx ? `#${w.rx.num} ${esc(w.rx.name)}` : "open water"}</td><td>${w.smode === "underway" ? "while moving" : `stop ${dur(w.dwell)}`}</td><td class="m">${w.rep}</td><td class="m">${w.eta != null ? when(w.eta) : ""}</td><td class="m">${ddm(w.lat, "N", "S")} ${ddm(w.lon, "E", "W")}</td><td style="width:60px"></td><td style="width:60px"></td><td style="width:90px"></td></tr>`).join("");
-  const lv = ["GO", "CHECK", "NO-GO"][C.level] || "-", cls = ["go", "check", "nogo"][C.level] || "";
+  const sampH = P.times.reduce((a, x) => a + (x.s.kind === "sample" ? x.dwell : 0), 0), otherH = Math.max(0, P.end - P.launch - P.under - sampH);
+  const pW = D.whPerKm2kn * (o.kn / 2) ** 2 * o.kn * 1.852, rangeNm = S.energy.cap * 1000 / (pW / o.kn);
   return `<h1>${esc(S.route.name || "Untitled route")}</h1>
     <div class="meta">${live ? "Times include Open-Meteo currents, wind and waves" : "Times assume still water: currents and wind not included"} &middot; sunrise ${hm(sr)}, sunset ${hm(ss)} &middot; generated ${new Date().toLocaleString()}</div>
     <div class="cards">
@@ -990,7 +992,7 @@ function planSheet() {
       <div class="c">Distance<b>${P.km.toFixed(1)} km / ${(P.km / 1.852).toFixed(1)} nm</b></div>
       <div class="c">Total time<b>${dur(P.end - P.launch)}</b></div>
       <div class="c">Under way<b>${dur(P.under)}</b></div>
-      <div class="c">Stopped<b>${dur(Math.max(0, P.end - P.launch - P.under))}</b></div>
+      <div class="c">Time spent sampling<b>${dur(sampH)}</b>${otherH > 0.01 ? `<span style="color:#6b7280;font-size:10.5px">+ ${dur(otherH)} at pass stops</span>` : ""}</div>
       <div class="c">Sampling<b>${P.sampling?.reps ? `${P.sampling.reps} samples, ${P.sampling.stops} stop${P.sampling.stops > 1 ? "s" : ""}` : "none"}</b></div>
       <div class="c">Cartridges<b>${P.sampling?.need || 0}${S.samp.cap > 0 ? ` of ${S.samp.cap}` : ""}</b></div>
       <div class="c">Battery minimum<b>${(Math.max(0, P.energy.minSoc) * 100).toFixed(0)} % of ${S.energy.cap} kWh</b></div>
@@ -1011,7 +1013,16 @@ function planSheet() {
     <table><tr><th>Receiver</th><th>Receiver lat, lon (WGS84)</th><th>Waypoint lat, lon (WGS84)</th><th>Waypoint to receiver</th><th>Closest route approach</th><th>Auto check</th><th>Checked 1</th><th>Checked 2</th></tr>${rxRows}</table>
     <h3>Navigation waypoints for the operator</h3>
     <div style="font-size:10.5px;color:#4b5563;margin-bottom:4px">WGS84 decimal degrees. Shaded rows are the harbor transit, driven by the operator; the autonomous route runs MISSION START to MISSION END. GOTO = steer to the point, LOITER = hold within ${S.ops.loiter} m for the time shown. A waypoint counts as reached within ${S.ops.accept} m. Course is true.</div>
-    <table><tr><th>WP</th><th>Name</th><th>Action</th><th>DD</th><th>DDM</th><th>Course to next</th><th>Distance to next</th><th>ETA</th></tr>${wpRows}</table>`;
+    <table><tr><th>WP</th><th>Name</th><th>Action</th><th>DD</th><th>DDM</th><th>Course to next</th><th>Distance to next</th><th>ETA</th></tr>${wpRows}</table>
+    <div style="break-inside:avoid"><h3>How this plan was calculated</h3>
+    <ul class="methods">
+      <li><b>Route.</b> Each leg is the shortest path through water deeper than ${D.minDepth} m (NOAA Coastal Relief Model, ~90 m grid), straightened so it only bends around land, shallows or a keep-out${S.limits.avoidKelp ? ", and routed around mapped kelp" : ""}. It stays more than ${D.keepout} m from every receiver${D.rx.some(r => r.ext) ? ` and ${D.rx.filter(r => r.ext).map(r => `${KO(r)} m from ${esc(r.name)}`).join(", ")}` : ""}. Receiver waypoints are ${D.standoff} m from the receiver toward deeper water${D.rx.some(r => r.ext) ? ` (${D.rx.filter(r => r.ext).map(r => `${SO(r)} m for ${esc(r.name)}`).join(", ")})` : ""}. Harbor transits are fixed paths checked on satellite imagery and driven by the operator at up to 3 kn; the autonomous route runs from MISSION START to MISSION END.</li>
+      <li><b>Times.</b> ${live ? `Live forecast (Open-Meteo): Copernicus surface currents (~8 km, tides included), 10 m wind and gusts, waves and cloud cover, sampled every 300 m at the hour the vessel is there. The vessel crabs into the cross-current; current plus 2 % of the wind speeds it up or slows it along the track${S.limits.waveLoss ? `; waves slow it ${S.limits.waveLoss} % per metre` : ""}.` : "Still water: distance divided by speed; currents, wind and waves are not included, so expect real times to differ."} Speed ${+o.kn.toFixed(2)} kn through the water, plus ${S.energy.xtrack} % extra distance for route following.</li>
+      <li><b>Sampling.</b> One sample takes ${S.samp.minPer} min; time at a sampling stop = samples &times; ${S.samp.minPer} min. Samples taken while moving add no time. ${P.sampling?.need || 0} cartridges needed${S.samp.blanks ? ` (including ${S.samp.blanks} field blanks)` : ""}${S.samp.cap > 0 ? ` of ${S.samp.cap} on board` : ""}.</li>
+      <li><b>Battery.</b> ${S.energy.cap} kWh pack. The manufacturer gives 100 nm at 2 kn on 3.5 kWh without solar (about 70 W, electronics included). Other speeds are not published; we scale power with speed&sup3;, which gives about ${Math.round(pW)} W at ${+o.kn.toFixed(2)} kn (range about ${Math.round(rangeNm)} nm without solar). Stopped: electronics ${S.energy.hotel} W + holding position ${S.energy.hold} W + sampler ${S.energy.sampler} W while sampling (McLane RoCSI datasheet: 5&ndash;8 W). Solar up to ${S.energy.solar} W, scaled by sun height and cloud cover. Holding and electronics power are our assumptions; replace them with the operator's numbers.</li>
+      <li><b>Map data.</b> Kelp: CDFW 2016 canopy survey (beds change every year). Marine Protected Areas: CDFW ds582. Receiver positions: ${esc(D.receiverFile)}. Basemap: Esri Ocean.</li>
+      <li><b>Sources.</b> openoceanrobotics.com/uncrewed-surface-vehicles &middot; openoceanrobotics.com/uncrewed-surface-vehicles/dataxplorer-enviro &middot; McLane RoCSI datasheet (bluezonegroup.com.au) &middot; open-meteo.com (marine and forecast APIs).</li>
+    </ul></div>`;
 }
 
 // ---------- best launch time ----------
