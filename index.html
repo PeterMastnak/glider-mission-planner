@@ -300,7 +300,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <label class="lbl">Notes<textarea class="field" id="ctNotes" rows="3" placeholder="samples, filters, who drives to which ramp..."></textarea></label>
     </div></details>
     <div class="sec"><div class="label">Export this route</div>
-      <div class="row"><button class="btn" data-x="op">Operator CSV</button><button class="btn" data-x="tsv">Operator TSV</button><button class="btn" data-x="geojson">GeoJSON</button><button class="btn" data-x="samples">Sample log CSV</button><button class="btn" data-x="gpx">GPX</button><button class="btn" data-x="kml">KML</button><button class="btn" data-x="csv">Planner CSV</button><button class="btn" data-x="json">JSON</button><button class="btn" data-x="keepout">Keep-out zones</button></div>
+      <div class="row"><button class="btn" data-x="op">Operator CSV</button><button class="btn" data-x="tsv">Operator TSV</button><button class="btn" data-x="geojson">GeoJSON</button><button class="btn" data-x="geoclean" title="Only the waypoints in order: waypoint or loiter point, with loiter minutes and radius">GeoJSON (clean)</button><button class="btn" data-x="samples">Sample log CSV</button><button class="btn" data-x="gpx">GPX</button><button class="btn" data-x="kml">KML</button><button class="btn" data-x="csv">Planner CSV</button><button class="btn" data-x="json">JSON</button><button class="btn" data-x="keepout">Keep-out zones</button></div>
       <div class="row" style="margin-top:8px"><label class="btn">Import route JSON<input type="file" id="imp" accept=".json" hidden></label><label class="btn">Import GPS track (GPX / CSV)<input type="file" id="impTrack" accept=".gpx,.csv,.txt" hidden></label><button class="btn" id="trackBtn" hidden>Track vs plan</button></div></div>
     <div class="sec"><div class="label">Launch / pickup sites</div><div class="list" id="sites"></div></div>
     <details class="grp"><summary>How routes, times and battery are calculated</summary><div class="body small" style="line-height:1.55">
@@ -1238,6 +1238,10 @@ function opTable() {          // operator waypoint table shared by the CSV, TSV 
 }
 const exporters = {
   op: () => { const T = opTable(); dl(slug() + "_operator.csv", [T.head, ...T.rows.map(r => r.map((v, k) => T.text[k] && !(v === "" && T.head[k] === "eta_local_pacific") ? q(v) : v))].map(r => r.join(",")).join("\n") + "\n", "text/csv"); },
+  geoclean: () => { const R = rows();      // waypoints only, in order: a waypoint or a loiter point
+    dl(slug() + "_waypoints.geojson", JSON.stringify({ type: "FeatureCollection", features: R.map((r, i) => { const loit = ACTION(r)[0] === "LOITER";
+      return { type: "Feature", properties: { wp: i + 1, name: r.name, type: loit ? "loiter" : "waypoint", ...(loit ? { loiter_min: Math.round(r.dwell * 60), loiter_radius_m: +S.ops.loiter } : {}) },
+        geometry: { type: "Point", coordinates: [+r.lon.toFixed(6), +r.lat.toFixed(6)] } }; }) }, null, 1) + "\n", "application/geo+json"); },
   tsv: () => { const T = opTable(), cl = v => String(v).replace(/[\t\r\n]+/g, " ");
     dl(slug() + "_operator.tsv", [T.head, ...T.rows].map(r => r.map(cl).join("\t")).join("\n") + "\n", "text/tab-separated-values"); },
   geojson: () => { const T = opTable(), R = T.R, prop = r => Object.fromEntries(T.head.map((h, k) => [h, r[k] === "" ? null : T.text[k] || isNaN(r[k]) ? r[k] : +r[k]]));
