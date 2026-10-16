@@ -199,8 +199,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <div id="map"></div>
     <div class="float toolbar" id="toolbar">
       <button data-m="build" class="on">&#10010; Build<span class="tx"> route</span></button>
-      <button data-m="pin" class="pinmode">&#128205; <span class="tx">Drop </span>Pin</button>
-      <button data-m="sample" class="smpmode" title="Click the water to add an eDNA sample anywhere on the route">&#128167; Sample<span class="tx"> point</span></button>
+      <button data-m="sample" class="smpmode" title="Click the water to add a waypoint: drive through it, stop there, or sample there">&#128205; <span class="tx">Add </span>Waypoint</button>
       <button data-m="pan">&#9995; Pan</button>
       <div class="sep"></div>
       <button id="undo" title="Undo the last change (Ctrl/Cmd+Z)">&#8630;<span class="tx"> Undo</span></button>
@@ -209,7 +208,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <div class="float layers" id="layers"></div>
     <div class="float legend">
       <div><i class="rampm" style="display:inline-grid;width:14px;height:14px;font-size:8px">R</i>launch / recovery ramp</div>
-      <div><i class="pinm" style="display:inline-block;width:13px;height:13px;border-width:2px"></i>your pin (drag to move)</div>
+      <div><i class="ptm wp" style="display:inline-block;width:11px;height:11px;cursor:default"></i>waypoint &middot; <i class="ptm" style="display:inline-block;width:11px;height:11px;margin:0 4px;cursor:default"></i>sample (drag to move)</div>
       <div><i><svg width="14" height="13" viewBox="0 0 20 18"><path d="M10 1.5 L18.5 16.5 L1.5 16.5 Z" fill="#facc15" stroke="#111" stroke-width="1.6"/></svg></i>receiver &middot; red = 100 m keep-out &middot; yellow name = live</div>
       <div><i><svg width="14" height="14" viewBox="0 0 20 18"><circle cx="10" cy="10" r="7" fill="#22d3ee" stroke="#111" stroke-width="1.6"/></svg></i>other-owner buoy (MBARI M1) &middot; 500 m keep-out</div>
       <div><i style="width:18px;height:10px;background:var(--kelp);opacity:.6;border-radius:2px"></i>kelp canopy (CDFW 2016)</div>
@@ -312,7 +311,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div>Kelp: CDFW 2016 statewide canopy survey (surface + subsurface), rasterised to the routing grid; beds change every year, so treat it as a
       guide. MPAs: CDFW California Marine Protected Areas [ds582]. Battery is an estimate; calibrate it and the speed with a real GPS track via
       <b>Track vs plan</b> after the first mission.</div>
-      <div><b>Sample points</b>: use <b>Sample point</b> on the map toolbar and click the water to drop a sample site. Sites work like receivers: while you build a route the new site becomes the next stop, and in Build route you can click any site to visit it. Once the route has a finish, a new site joins the leg it is closest to. Drag a site to move it. <b>On station</b> = the vessel stops and holds position while the sampler runs (samples &times; minutes per sample, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds N evenly spaced stops (default one, halfway), or one every X km or X minutes (at that leg's average speed). Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, n_samples) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (samples + blanks).</div>
+      <div><b>Waypoints and sample points</b>: use <b>Waypoint</b> on the map toolbar and click the water. A new waypoint is driven through (0 min); in the stop list set minutes to stop there, or switch it to <b>sample on station</b> / <b>sample under way</b>. Waypoints get IDs W1, W2&hellip; and samples S01, S02&hellip; Waypoints work like receivers: while you build a route the new site becomes the next stop, and in Build route you can click any site to visit it. Once the route has a finish, a new site joins the leg it is closest to. Drag a site to move it. <b>On station</b> = the vessel stops and holds position while the sampler runs (samples &times; minutes per sample, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds N evenly spaced stops (default one, halfway), or one every X km or X minutes (at that leg's average speed). Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, n_samples) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (samples + blanks).</div>
       <div><b>Battery and power: where the numbers come from</b></div>
       <ul style="margin:0;padding-left:18px">
         <li><b>Battery</b>: <b>our vessel has the maximum configuration, 17.5 kWh</b>: the standard 3.5 kWh lithium-ion pack plus 4 add-on packs of 3.5 kWh (confirmed by the team, Oct 2026). Open Ocean Robotics offers 3.5 kWh standard and add-on packs in 3.5 kWh steps up to 17.5 kWh. Change it under Vessel and battery if a different vessel is used.</li>
@@ -453,7 +452,7 @@ function harborPath(s, out) {   // operator-driven transit ramp -> mission start
   if (s?.type !== "ramp") return null; const r = D.ramps[s.ref]; if (!r?.harbor?.length) return null;
   const p = [[r.lat, r.lon], ...r.harbor]; return out ? p : p.slice().reverse(); }
 function stopName(s) { if (s.type === "rx") { const r = RX[s.ref]; return `#${r.num} ${r.name}`; }
-  if (s.type === "pt") return s.kind !== "sample" ? "Waypoint" : `${sampleIds().get(s) || ""} ${s.mode === "underway" ? "sample under way" : "sample point"}`.trim();
+  if (s.type === "pt") return s.kind !== "sample" ? `${wpIds().get(s) || ""} waypoint`.trim() : `${sampleIds().get(s) || ""} ${s.mode === "underway" ? "sample under way" : "sample point"}`.trim();
   if (s.type === "ramp") return D.ramps[s.ref].name; const p = S.pins.find(p => p.id === s.ref); return p ? p.name : "(deleted pin)"; }
 function change(fn, msg) { S.history.push(JSON.stringify({ st: S.route.stops, sp: S.spots })); if (S.history.length > 60) S.history.shift(); fn(); dirty(); render(); if (msg) toast(msg); }
 function addSite(type, ref) { const st = S.route.stops;
@@ -470,12 +469,13 @@ S.passDefault = () => +document.getElementById("passmin").value;
 // ---------- sample points ----------
 const isMid = s => s.type === "rx" || s.type === "pt";
 const isUW = s => s.type === "pt" && s.kind === "sample" && s.mode === "underway";
+function wpIds(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (s.type === "pt" && s.kind !== "sample") m.set(s, "W" + ++n); }); return m; }
 function sampleIds(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (isMid(s) && s.kind === "sample") m.set(s, "S" + String(++n).padStart(2, "0")); }); return m; }
 function ptProblem(lat, lon) {   // a sample point must be in navigable water and outside every keep-out (same margin as the routing grid)
   const [i, j] = cellOf(lat, lon); if (!(i >= 0 && j >= 0 && i < NX && j < NY) || !WATER[j * NX + i]) return `That spot is on land or shallower than ${D.minDepth} m.`;
-  const r = D.rx.find(r => dist([lat, lon], [r.lat, r.lon]) < KO(r) + 50); return r ? `Too close to #${r.num} ${r.name}: keep sample points more than ${KO(r) + 50} m away.` : null; }
+  const r = D.rx.find(r => dist([lat, lon], [r.lat, r.lon]) < KO(r) + 50); return r ? `Too close to #${r.num} ${r.name}: keep waypoints more than ${KO(r) + 50} m away.` : null; }
 function ptWarn(lat, lon, self) { const w = []; if (inKelp(lat, lon)) w.push("in mapped kelp");
-  if (S.spots.some(x => x !== self && dist([lat, lon], [x.lat, x.lon]) < 50)) w.push("within 50 m of another sample site"); return w; }
+  if (S.spots.some(x => x !== self && dist([lat, lon], [x.lat, x.lon]) < 50)) w.push("within 50 m of another waypoint"); return w; }
 // sample sites live on the map like pins (S.spots, saved in this browser); a route visits one with a stop {type: "pt", ref: site id}
 function spotOf(s) { return s.ref ? S.spots.find(x => x.id === s.ref) : s.lat != null ? s : null; }
 const saveSpots = () => store.set("rc_spots", S.spots);
@@ -484,7 +484,7 @@ const newPt = (ref, o = {}) => ({ type: "pt", ref, kind: "sample", mode: "statio
 function migratePts(stops) { stops.forEach(s => { if (s.type === "pt" && !s.ref && s.lat != null) { s.ref = newSpot(s.lat, s.lon, s.series ? { series: s.series } : {}); delete s.lat; delete s.lon; } }); return stops; }
 function addPtStop(id) { const st = S.route.stops;   // like clicking a receiver: next stop, before the finish
   if (!st.length) { toast("Pick a start first: click a ramp or one of your pins."); return; }
-  change(() => { const item = newPt(id); if (st[st.length - 1].kind === "end") st.splice(st.length - 1, 0, item); else st.push(item); }); }
+  change(() => { const item = newPt(id, { kind: "pass", dwell: 0 }); if (st[st.length - 1].kind === "end") st.splice(st.length - 1, 0, item); else st.push(item); }); }
 function insertIndex(pos) {   // where a new mid-route stop goes: before the end of the leg it is closest to
   const st = S.route.stops, P = PLAN; let best = null;
   P.legs.forEach((l, i) => { for (let k = 1; k < l.pts.length; k++) { const d = rxClearanceOne(l.pts[k - 1], l.pts[k], { lat: pos[0], lon: pos[1] }); if (!best || d < best.d) best = { d, i }; } });
@@ -493,9 +493,9 @@ function insertIndex(pos) {   // where a new mid-route stop goes: before the end
 function addPt(lat, lon) {   // Sample point tool: drop a sample site; while building, it also becomes the next stop (or joins the nearest leg once the route has a finish)
   const st = S.route.stops, bad = ptProblem(lat, lon); if (bad) { toast(bad); return; }
   const w = ptWarn(lat, lon), id = newSpot(lat, lon), note = w.length ? ` (${w.join(", ")})` : "";
-  if (!st.length) { render(); toast(`Sample site added${note}. In Build route, click a ramp or pin to start, then click sites and receivers in order.`); return; }
+  if (!st.length) { render(); toast(`Waypoint added${note}. In Build route, click a ramp to start, then click waypoints and receivers in order.`); return; }
   const done = st[st.length - 1].kind === "end";
-  change(() => st.splice(done ? insertIndex([lat, lon]) : st.length, 0, newPt(id)), `Sample site added ${done ? "to the nearest leg" : "as the next stop"}${note}. Drag it to adjust.`); }
+  change(() => st.splice(done ? insertIndex([lat, lon]) : st.length, 0, newPt(id, { kind: "pass", dwell: 0 })), `Waypoint added ${done ? "to the nearest leg" : "as the next stop"}${note}: driven through. Set minutes or sampling in the stop list. Drag it to adjust.`); }
 function alongPts(pts, d) { let acc = 0; for (let k = 1; k < pts.length; k++) { const L = dist(pts[k - 1], pts[k]); if (acc + L >= d) { const f = (d - acc) / Math.max(1e-9, L), a = pts[k - 1], b = pts[k]; return [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])]; } acc += L; } return pts[pts.length - 1]; }
 function addSeries(i, by, v, mode) {   // sample points along leg i (the leg arriving at P.times[i])
   const leg = PLAN.legs[i - 1], to = PLAN.times[i].s, L = plen(leg.pts), ds = [];
@@ -703,13 +703,13 @@ function drawStatic() {
     .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, p.name, "Delete pin", () => deletePin(p.id)); })
     .on("dragend", e => { const ll = e.target.getLatLng(); p.lat = +ll.lat.toFixed(6); p.lon = +ll.lng.toFixed(6); savePins(); legCache.clear(); render(); })
     .addTo(G.sites));
-  const ids = sampleIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
-  S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u)).filter(Boolean).join(", ");
+  const ids = sampleIds(), wids = wpIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
+  S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u) || wids.get(u)).filter(Boolean).join(", ");
     const cls = !s ? "idle" : s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : "";
-    L.marker([sp.lat, sp.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && (lab || !s) ? `<span class="rxlab" style="left:19px;top:0">${lab || "site"}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
-      .bindTooltip(`<b>${s ? esc(stopName(s)) : "Sample site (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, right-click to delete, " : "click to delete, "}drag to move</i>`, { direction: "top", offset: [0, -16] })
-      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build" || S.mode === "sample") addPtStop(sp.id); else siteMenu(e.latlng, s ? stopName(s) : "Sample site", "Delete site", () => deleteSpot(sp.id)); })
-      .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, s ? stopName(s) : "Sample site", "Delete site", () => deleteSpot(sp.id)); })
+    L.marker([sp.lat, sp.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && (lab || !s) ? `<span class="rxlab" style="left:19px;top:0">${lab || "unused"}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
+      .bindTooltip(`<b>${s ? esc(stopName(s)) : "Waypoint (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind !== "sample" ? `<br>${+s.dwell ? `stop ${Math.round(s.dwell * 60)} min` : "drive through"}` : ""}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, right-click to delete, " : "click to delete, "}drag to move</i>`, { direction: "top", offset: [0, -16] })
+      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build" || S.mode === "sample") addPtStop(sp.id); else siteMenu(e.latlng, s ? stopName(s) : "Waypoint", "Delete waypoint", () => deleteSpot(sp.id)); })
+      .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, s ? stopName(s) : "Waypoint", "Delete waypoint", () => deleteSpot(sp.id)); })
       .on("dragend", e => { const ll = e.target.getLatLng(), bad = ptProblem(ll.lat, ll.lng); if (bad) { toast(bad); render(); return; }
         const w = ptWarn(ll.lat, ll.lng, sp); sp.lat = +ll.lat.toFixed(6); sp.lon = +ll.lng.toFixed(6); saveSpots(); legCache.clear(); dirty(); render(); if (w.length) toast(`Moved (${w.join(", ")}).`); })
       .addTo(G.sites); });
@@ -744,12 +744,12 @@ function render() {
   PLAN = compute(); const P = PLAN, st = S.route.stops;
   drawStatic(); drawRoute(P); drawTrack();
   document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Click a pin to delete it; drag to move."
-    : S.mode === "sample" ? (!st.length ? "Click the water to drop sample sites. Then click a ramp or pin in <b>Build route</b> to start, and click sites and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new site becomes the next stop. Click an existing site to visit it." : "Click the water: the new site joins the nearest leg. Click an existing site to add it before the finish.")
+    : S.mode === "sample" ? (!st.length ? "Click the water to drop waypoints. Then click a ramp in <b>Build route</b> to start, and click waypoints and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new waypoint becomes the next stop. Click an existing waypoint to visit it." : "Click the water: the new waypoint joins the nearest leg (driven through; set a stop or sample in the stop list). Click an existing waypoint to add it before the finish.")
     : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route."
     : st.length && st[0].kind !== "start" ? "The route has no start: click a ramp or pin to set one."
-    : !st.length ? "<b>1.</b> Click a green ramp or an orange pin to set the start."
-    : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers and sample sites in the order to visit them, then a ramp or pin to finish."
-    : "Route complete. Click receivers to insert them before the finish, or another ramp / pin to change it. To stop at this ramp and carry on, set the finish to <b>stop, then continue</b> in the stop list.";
+    : !st.length ? "<b>1.</b> Click a green ramp to set the start."
+    : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers and waypoints in the order to visit them (or add waypoints with <b>Waypoint</b>), then a ramp to finish."
+    : "Route complete. Click receivers to insert them before the finish, add waypoints with <b>Waypoint</b>, or click another ramp to change the finish. To stop at this ramp and carry on, set the finish to <b>stop, then continue</b> in the stop list.";
   // status
   const C = P.checks, sb = document.getElementById("statusBox");
   sb.innerHTML = C.level < 0 ? "" : `<div class="status ${["go", "check", "nogo"][C.level]}"><span class="big">${["GO", "CHECK", "NO-GO"][C.level]}</span>${C.out.length ? `<ul>${C.out.map(x => `<li>${esc(x.msg)}</li>`).join("")}</ul>` : '<span class="small">All checks pass for this plan.</span>'}</div>`;
@@ -777,12 +777,12 @@ function render() {
   const minIn = (s, idx) => `<input class="field" type="number" min="0" step="${s.kind === "sample" ? S.samp.minPer : 5}" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="${s.kind === "sample" ? "Minutes on station; changes the number of samples (one sample = " + S.samp.minPer + " min)" : "Minutes at this stop"}"><span class="sub">min</span>`;
   ol.innerHTML = P.times.map((x, i) => {
     const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isRx) n++;
-    const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${ids.get(s) || "&middot;"}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
+    const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${ids.get(s) || wpIds().get(s) || "&middot;"}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
     const pos = stopPos(s), r = isRx ? RX[s.ref] : null;
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
         ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
-      : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Sample type"><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint only</option></select>
-        ${repIn(s, idx)}${s.kind === "sample" && !isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}</div>`
+      : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Waypoint type"><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint</option><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option></select>
+        ${repIn(s, idx)}${!isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : s.kind === "start" ? `<div class="ctl"><span class="sub">start</span><button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`
       : `<div class="ctl"><select class="field" data-halt="${idx}" aria-label="Finish or stop">${idx === st.length - 1 ? `<option value="end" ${s.kind === "end" ? "selected" : ""}>finish here</option>` : ""}<option value="stop" ${s.kind === "stop" ? "selected" : ""}>stop, then continue</option></select>${s.kind === "stop" ? `<input class="field" type="number" min="0" step="5" value="${Math.round((+s.dwell || 0) * 60)}" data-dwell="${idx}" aria-label="Minutes stopped" title="Minutes stopped${s.type === "ramp" ? " at the ramp (harbor transit in and out is added)" : ""}"><span class="sub">min</span>` : ""}<button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`;
     const leg = i > 0 ? P.legs[i - 1] : null;
@@ -800,9 +800,9 @@ function render() {
     // removing a sample stop also deletes its map site, unless another stop in this route or a saved route still visits it
     const keep = s.type === "pt" && (st.some(x => x !== s && x.type === "pt" && x.ref === s.ref) || S.routes.some(r => r.id !== S.route.id && (r.stops || []).some(x => x.type === "pt" && x.ref === s.ref)));
     change(() => { st.splice(+el.dataset.rm, 1); if (s.type === "pt" && !keep) { S.spots = S.spots.filter(x => x.id !== s.ref); saveSpots(); } },
-      s.type === "pt" ? (keep ? "Stop removed. Its site stays on the map: another route uses it." : "Stop and its sample site removed. Undo brings both back.") : null); });
+      s.type === "pt" ? (keep ? "Stop removed. Its site stays on the map: another route uses it." : "Stop and its waypoint removed. Undo brings both back.") : null); });
   ol.querySelectorAll("[data-halt]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.halt]; s.kind = el.value; if (el.value === "stop" && !(+s.dwell > 0)) s.dwell = 0.5; },
-    el.value === "stop" ? "Stop set. Keep clicking receivers or sample sites, then a ramp or pin to finish." : "Finish set."));
+    el.value === "stop" ? "Stop set. Keep clicking receivers or waypoints, then a ramp to finish." : "Finish set."));
   ol.querySelectorAll("[data-pkind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.pkind];
     if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? s.rep * S.samp.minPer / 60 : 0; } }));
   ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
@@ -854,7 +854,7 @@ function lists() {
     S.pins.map(p => `<div class="item"><div style="min-width:0"><input class="field" value="${esc(p.name)}" data-pname="${p.id}" style="width:100%;font-weight:600" aria-label="Pin name"><div class="sub" style="margin-top:4px">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} &middot; ${ddm(p.lat, "N", "S")} ${ddm(p.lon, "E", "W")}</div></div>
       <div class="acts"><button class="btn" data-gopin="${p.id}">Show</button><button class="btn danger" data-rmpin="${p.id}">Delete</button></div></div>`).join("") +
     (S.spots.length ? `<div class="item"><div style="min-width:0"><div class="nm">Sample sites</div><div class="sub">${S.spots.length} on the map &middot; ${S.spots.filter(x => !S.route.stops.some(s => s.ref === x.id)).length} not in this route</div></div><div class="acts"><button class="btn danger" id="rmIdle" title="Delete sample sites that this route does not visit">Delete unused</button></div></div>` : "") +
-    `<div class="hint">Use <b>Drop pin</b> on the map to add your own launch or pickup site, and <b>Sample point</b> to add sample sites. Drag any ramp, pin or site to correct it.</div>`;
+    `<div class="hint">Use <b>Waypoint</b> on the map to add points to drive through, stop at or sample at. Drag any ramp or waypoint to correct it.</div>`;
   document.getElementById("rmIdle")?.addEventListener("click", e => { if (e.target.textContent !== "Confirm") { e.target.textContent = "Confirm"; return; }
     const n = S.spots.length; S.spots = S.spots.filter(x => S.route.stops.some(s => s.ref === x.id)); saveSpots(); render(); toast(`Deleted ${n - S.spots.length} unused sample sites. Saved routes that used them lose those stops.`); });
   sl.querySelectorAll("[data-goramp]").forEach(b => b.onclick = () => { const r = D.ramps[+b.dataset.goramp]; map.setView([r.lat, r.lon], 15); });
@@ -909,7 +909,7 @@ function deletePin(id) { const p = S.pins.find(x => x.id === id); if (!p) { map.
   toast(`Deleted ${p.name}.${used ? (S.route.stops.length && S.route.stops[0].kind !== "start" ? " It was the route start: click a ramp or pin to set a new one." : " It was removed from the route.") : ""}`); }
 function deleteSpot(id) { const used = S.route.stops.some(s => s.type === "pt" && s.ref === id);
   if (used) change(() => { S.route.stops = S.route.stops.filter(s => !(s.type === "pt" && s.ref === id)); });
-  S.spots = S.spots.filter(x => x.id !== id); saveSpots(); map.closePopup(); render(); toast(used ? "Sample site deleted and removed from the route." : "Sample site deleted."); }
+  S.spots = S.spots.filter(x => x.id !== id); saveSpots(); map.closePopup(); render(); toast(used ? "Waypoint deleted and removed from the route." : "Waypoint deleted."); }
 function siteMenu(ll, title, label, fn) {   // small popup on a pin / sample site with a delete button (click outside Build mode, or right-click)
   const d = document.createElement("div"); d.innerHTML = `<div style="font-weight:600;margin-bottom:6px">${esc(title)}</div><button class="btn danger">${label}</button>`;
   d.querySelector("button").onclick = fn; L.popup({ offset: [0, -14] }).setLatLng(ll).setContent(d).openOn(map); }
@@ -1060,7 +1060,7 @@ function planSheet() {
     return min ? `Pass; stop ${min} min` : "Pass"; };
   const stopRows = P.times.map((x, i) => { const s = x.s, p = stopPos(s), leg = i ? P.legs[i - 1] : null, mid = isMid(s); if (mid) n++;
     const t = i ? x.arr : P.launch, night = isNightAt(S.date, t), ns = nearestSite(p);
-    const name = s.type === "pt" ? (s.kind === "sample" ? "Open-water sample site" : "Waypoint") : stopName(s);
+    const name = s.type === "pt" ? (s.kind === "sample" ? "Open-water sample site" : stopName(s)) : stopName(s);
     return `<tr class="${night ? "night" : ""}"><td><b>${mid ? n : s.type === "ramp" ? "R" : "P"}</b></td><td><b>${esc(name)}</b>${s.type === "rx" && RX[s.ref].live ? '<br><span style="color:#6b7280">live receiver</span>' : ""}</td><td>${what(s)}</td>
       <td class="m"><b>${when(t)}</b>${x.dwell ? `&ndash;${when(x.dep)}` : ""}${night ? "<br>dark" : ""}</td>
       <td class="m">${ddm(p[0], "N", "S")}<br>${ddm(p[1], "E", "W")}<br><span style="color:#6b7280">${p[0].toFixed(5)}, ${p[1].toFixed(5)}</span></td>
@@ -1202,8 +1202,8 @@ function rows() {          // every point the navigator needs, in order: harbor 
       out.push({ name: rr.name, lat: rr.lat, lon: rr.lon, kind: "ramp_stop", dwell: +s.dwell || 0, eta: x.arr + (h ? h.in.h : 0), note: `stop at the ramp ${min} min (offload / crew change), then the operator drives back out` });
       if (h) harbor(h.out.pts, true);
       out.push({ name: `MISSION RESUME (outside harbor, ${nm})`, lat: pos[0], lon: pos[1], kind: "start", dwell: 0, eta: x.dep, note: "autonomous route continues" }); return; }
-    if (isPt) { out.push({ name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : "waypoint", lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
-      note: !sid ? "researcher waypoint" : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)` }); return; }
+    if (isPt) { out.push({ name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : stopName(s), lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
+      note: !sid ? (+s.dwell ? `stop ${Math.round(s.dwell * 60)} min, then continue` : "drive through") : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)` }); return; }
     const name = r ? `${r.num} ${r.name}${r.live ? " LIVE" : ""}` : isRamp ? `${kind === "start" ? "MISSION START" : "MISSION END"} (outside harbor, ${D.ramps[s.ref].name.replace(/ (launch )?ramp$/i, "")})` : stopName(s);
     out.push({ name, lat: pos[0], lon: pos[1], kind, dwell: s.dwell || 0, eta: i ? x.arr : x.dep, rx: r, sid, rep: sid ? rep : "", smode: sid ? "on_station" : "",
       note: r ? `${sid ? `eDNA sample ${sid}, ${rep} sample(s); ` : ""}${r.ext ? `${r.owner} surface buoy, not ours; ` : ""}stand-off ${SO(r)} m from ${r.ext ? "buoy" : "receiver"} at ${r.sbrg} deg; ${r.ext ? "buoy" : "receiver"} ${r.lat.toFixed(5)},${r.lon.toFixed(5)}; keep-out ${KO(r)} m` : isRamp ? "autonomous route starts / ends here" : "" });
@@ -1212,7 +1212,7 @@ function rows() {          // every point the navigator needs, in order: harbor 
   return out;
 }
 const ACTION = r => ({ ramp: ["MANUAL", "HARBOR"], harbor: ["MANUAL", "HARBOR"], ramp_end: ["MANUAL", "HARBOR"], ramp_stop: ["MANUAL", "HARBOR"], pin_stop: ["LOITER", "STOP"], start: ["START", "MISSION"], end: ["END", "MISSION"], via: ["GOTO", "ROUTE"],
-  station: ["LOITER", "RECEIVER"], pass: [r.dwell > 0 ? "LOITER" : "GOTO", "RECEIVER"], sample_st: ["LOITER", "SAMPLE"], sample_uw: ["GOTO", "SAMPLE"], wp: ["GOTO", "ROUTE"] })[r.kind];
+  station: ["LOITER", "RECEIVER"], pass: [r.dwell > 0 ? "LOITER" : "GOTO", "RECEIVER"], sample_st: ["LOITER", "SAMPLE"], sample_uw: ["GOTO", "SAMPLE"], wp: [r.dwell > 0 ? "LOITER" : "GOTO", r.dwell > 0 ? "STOP" : "ROUTE"] })[r.kind];
 const q = s => `"${String(s).replace(/"/g, '""')}"`;
 const exporters = {
   op: () => { const R = rows(), O = S.ops; let cum = 0;
