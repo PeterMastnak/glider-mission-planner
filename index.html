@@ -125,6 +125,7 @@ details.grp[open] > summary { border-bottom:1px solid var(--line); } details.grp
 .rlab { position:absolute; left:24px; top:1px; font:700 11.5px Inter; color:var(--ink); white-space:nowrap; text-shadow:0 0 3px var(--halo),0 0 3px var(--halo),0 0 3px var(--halo); pointer-events:none; }
 .stopn { width:20px; height:20px; border-radius:50%; background:var(--route2); color:#fff; font:800 10.5px Inter; display:grid; place-items:center; border:2px solid var(--halo); box-shadow:0 1px 4px rgba(0,0,0,.5); }
 .stopn.sample { background:var(--sample); color:#2a0530; width:24px; height:24px; }
+.stopn.uw { background:var(--halo); color:var(--sample); border:2.5px solid var(--sample); width:24px; height:24px; } .stopn.wp { border-radius:6px; }
 .arrow { color:var(--route); font-size:12px; line-height:1; text-shadow:0 0 3px var(--halo),0 0 2px var(--halo); }
 .boat { width:18px; height:18px; border-radius:50%; background:#fff; border:4px solid var(--track); box-shadow:0 0 0 6px rgba(245,158,11,.28), 0 2px 8px rgba(0,0,0,.5); }
 .leaflet-container { font-family:Inter, sans-serif; background:var(--bg); }
@@ -241,18 +242,21 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
     <div class="sec"><div class="label">Speed through water <span><input class="field" type="number" id="kncustom" min="0.5" max="8" step="0.1" style="width:64px;height:24px;padding:2px 6px"> kn custom</span></div><div class="seg" id="speed"></div></div>
     <div class="sec"><div class="label">Currents + wind drift</div><div class="seg" id="cur"></div><div class="wxstatus" id="wxstatus"><i></i><span>Live forecast not loaded</span></div></div>
     <div class="sec kpis" id="kpis"></div>
-    <div class="sec"><div class="label">Stops in order <span>pass or sample at each stop</span></div>
-      <div class="row" style="margin-bottom:8px"><span class="small">Default pass</span><input class="field" type="number" id="passmin" value="15" min="0" max="120" step="5" style="width:62px"><span class="small">min at a receiver you only pass</span></div>
-      <div class="grid2" style="margin-bottom:8px">
-        <label class="lbl">Samples per stop<input class="field" type="number" id="spReps" min="1" max="24" step="1" title="Default number of samples (cartridges) taken at each sampling stop"></label>
-        <label class="lbl">Minutes per sample<input class="field" type="number" id="spMin" min="1" max="600" step="1" title="How long one sample takes; time on station = samples x minutes"></label>
-        <label class="lbl">Cartridges on board<input class="field" type="number" id="spCap" min="0" step="1" title="0 = do not check"></label>
-        <label class="lbl">Field blanks<input class="field" type="number" id="spBlanks" min="0" step="1" title="Blanks use cartridges but need no stop"></label>
-      </div>
-      <div class="small" style="margin-bottom:8px"><b>samples</b> on a stop = cartridges used there; time on station = samples &times; minutes per sample. <b>Priority</b> (high / medium / low) is only used by <b>Trim to deadline</b>, which drops low, then medium stops when you would be back too late.</div>
+    <div class="sec"><div class="label">Stops in order <span>pass, stop or sample at each stop</span></div>
+      <div class="small" id="sampSum" style="margin-bottom:8px"></div>
       <div class="row" style="margin-bottom:8px"><button class="btn" id="optimize" title="Reorder receiver stops for the shortest water distance between the fixed start and finish">&#8645; Optimize order</button><button class="btn" id="trim" title="Drop low, then medium priority stops until the vessel is back by the deadline">&#9986; Trim to deadline</button></div>
       <ol class="stops" id="stops"></ol></div>
     <div class="sec"><div class="label">Battery over the mission <span id="socNote"></span></div><div class="chart" id="socChart"></div></div>
+    <details class="grp" id="sampGrp"><summary>Sampling</summary><div class="body">
+      <div class="grid2" style="margin-bottom:8px">
+        <label class="lbl">Minutes per sample<input class="field" type="number" id="spMin" min="1" max="600" step="1" title="How long one sample takes; time on station = samples x minutes"></label>
+        <label class="lbl">Samples per stop<input class="field" type="number" id="spReps" min="1" max="24" step="1" title="Default number of samples (cartridges) taken at each new sampling stop"></label>
+        <label class="lbl">Cartridges on board<input class="field" type="number" id="spCap" min="0" step="1" title="0 = do not check"></label>
+        <label class="lbl">Field blanks<input class="field" type="number" id="spBlanks" min="0" step="1" title="Blanks use cartridges but need no stop"></label>
+        <label class="lbl">Default pass at a receiver (min)<input class="field" type="number" id="passmin" value="15" min="0" max="120" step="5" title="Minutes at a receiver you only pass (no sample)"></label>
+      </div>
+      <div class="small"><b>Minutes per sample</b> sets the time for every sampling stop: time on station = samples &times; minutes per sample. Changing it re-times every sampling stop in the open route, and saved routes are re-timed when you open them. <b>Samples per stop</b> is the default for new sampling stops; change any stop in the stop list. <b>Priority</b> (high / medium / low) is only used by <b>Trim to deadline</b>, which drops low, then medium stops when you would be back too late.</div>
+    </div></details>
     <details class="grp"><summary>Limits and checks</summary><div class="body">
       <div class="grid3">
         <label class="lbl">Max wind (kn)<input class="field" type="number" id="limWind" min="0" step="1"></label>
@@ -311,7 +315,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <div>Kelp: CDFW 2016 statewide canopy survey (surface + subsurface), rasterised to the routing grid; beds change every year, so treat it as a
       guide. MPAs: CDFW California Marine Protected Areas [ds582]. Battery is an estimate; calibrate it and the speed with a real GPS track via
       <b>Track vs plan</b> after the first mission.</div>
-      <div><b>Waypoints and sample points</b>: use <b>Waypoint</b> on the map toolbar and click the water. A new waypoint is driven through (0 min); in the stop list set minutes to stop there, or switch it to <b>sample on station</b> / <b>sample under way</b>. Waypoints get IDs W1, W2&hellip; and samples S01, S02&hellip; Waypoints work like receivers: while you build a route the new site becomes the next stop, and in Build route you can click any site to visit it. Once the route has a finish, a new site joins the leg it is closest to. Drag a site to move it. <b>On station</b> = the vessel stops and holds position while the sampler runs (samples &times; minutes per sample, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds N evenly spaced stops (default one, halfway), or one every X km or X minutes (at that leg's average speed). Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, n_samples) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (samples + blanks).</div>
+      <div><b>Waypoints and sample points</b>: use <b>Waypoint</b> on the map toolbar and click the water. A new waypoint is driven through (0 min); in the stop list set minutes to stop there, or switch it to <b>sample on station</b> / <b>sample under way</b>. Every stop (receiver, waypoint or sample point) is numbered in route order, 1, 2, 3&hellip;; sampling stops also get sample IDs S01, S02&hellip; Waypoints work like receivers: while you build a route the new site becomes the next stop, and in Build route you can click any site to visit it. Once the route has a finish, a new site joins the leg it is closest to. Drag a site to move it. <b>On station</b> = the vessel stops and holds position while the sampler runs (samples &times; minutes per sample, editable). <b>Under way</b> = the operator starts the sampler at that waypoint and the vessel keeps going; it adds sampler power but no time. <b>+ samples</b> under a leg adds N evenly spaced stops (default one, halfway), or one every X km or X minutes (at that leg's average speed). Sampling stops get IDs S01, S02&hellip; in route order; they appear in the operator export (sample_id, sample_mode, n_samples) and in the <b>Sample log CSV</b>, which has blank columns to fill in on the day. Set cartridges on board to get a warning when the plan needs more (samples + blanks).</div>
       <div><b>Battery and power: where the numbers come from</b></div>
       <ul style="margin:0;padding-left:18px">
         <li><b>Battery</b>: <b>our vessel has the maximum configuration, 17.5 kWh</b>: the standard 3.5 kWh lithium-ion pack plus 4 add-on packs of 3.5 kWh (confirmed by the team, Oct 2026). Open Ocean Robotics offers 3.5 kWh standard and add-on packs in 3.5 kWh steps up to 17.5 kWh. Change it under Vessel and battery if a different vessel is used.</li>
@@ -344,14 +348,15 @@ const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a
 const today = ymd(new Date());
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// samp.minPer: the operator said in Oct 2026 that one sample takes ~25 min (was 20); minV25 moves browsers still on the old default once
 const DEF = { limits: { wind: 15, gust: 20, hs: 2.0, back: "sunset", backT: "18:00", daySample: true, waveLoss: 0, avoidKelp: false },
-              energy: { cap: 17.5, solar: 270, hotel: 10, sampler: 10, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 }, samp: { minPer: 20, reps: 2, cap: 24, blanks: 0 },
+              energy: { cap: 17.5, solar: 270, hotel: 10, sampler: 10, hold: 20, xtrack: 5 }, ops: { accept: 25, loiter: 50, densify: 0 }, samp: { minPer: 25, reps: 2, cap: 24, blanks: 0 },
               contacts: { op: "", pi: "", lead: "", comms: "", notes: "" } };
 const S = { mode: "build", kn: 2, cur: "still", base: "ocean", date: today, launch: 10, t: 0,
             route: { id: null, name: "", stops: [] },          // stop: {type: ramp|pin|rx|pt, ref (pt: lat, lon, mode station|underway, series), kind: start|pass|sample|end, dwell (h), prio, rep}
             pins: store.get("rc_pins", []), routes: store.get("rc_routes", []), rampMoves: store.get("rc_ramps", {}),
             limits: { ...DEF.limits, ...store.get("rc_limits", {}) }, energy: (e => e.packV2 ? e : { ...e, cap: 17.5, packV2: true })({ ...DEF.energy, ...store.get("rc_energy", {}) }),
-            ops: { ...DEF.ops, ...store.get("rc_ops", {}) }, samp: { ...DEF.samp, ...store.get("rc_samp2", {}) }, spots: store.get("rc_spots", []), contacts: { ...DEF.contacts, ...store.get("rc_contacts", {}) },
+            ops: { ...DEF.ops, ...store.get("rc_ops", {}) }, samp: (x => x.minV25 ? x : { ...x, minPer: 25, minV25: true })({ ...DEF.samp, ...store.get("rc_samp2", {}) }), spots: store.get("rc_spots", []), contacts: { ...DEF.contacts, ...store.get("rc_contacts", {}) },
             layers: { kelp: true, mpa: true, arrows: true, labels: true, track: true }, track: null, history: [] };
 D.ramps.forEach((r, i) => { const m = S.rampMoves[i]; if (m) { r.lat = m[0]; r.lon = m[1]; } });
 D.rx.forEach(r => { r.station = r.name; const a = r.name, b = r.site || "", al = a.toLowerCase(), bl = b.toLowerCase();   // shown as "station (site)", one name when they match
@@ -452,7 +457,7 @@ function harborPath(s, out) {   // operator-driven transit ramp -> mission start
   if (s?.type !== "ramp") return null; const r = D.ramps[s.ref]; if (!r?.harbor?.length) return null;
   const p = [[r.lat, r.lon], ...r.harbor]; return out ? p : p.slice().reverse(); }
 function stopName(s) { if (s.type === "rx") { const r = RX[s.ref]; return `#${r.num} ${r.name}`; }
-  if (s.type === "pt") return s.kind !== "sample" ? `${wpIds().get(s) || ""} waypoint`.trim() : `${sampleIds().get(s) || ""} ${s.mode === "underway" ? "sample under way" : "sample point"}`.trim();
+  if (s.type === "pt") return s.kind !== "sample" ? `Waypoint ${stopNums().get(s) || ""}`.trim() : `${sampleIds().get(s) || ""} ${s.mode === "underway" ? "sample under way" : "sample point"}`.trim();
   if (s.type === "ramp") return D.ramps[s.ref].name; const p = S.pins.find(p => p.id === s.ref); return p ? p.name : "(deleted pin)"; }
 function change(fn, msg) { S.history.push(JSON.stringify({ st: S.route.stops, sp: S.spots })); if (S.history.length > 60) S.history.shift(); fn(); dirty(); render(); if (msg) toast(msg); }
 function addSite(type, ref) { const st = S.route.stops;
@@ -469,7 +474,7 @@ S.passDefault = () => +document.getElementById("passmin").value;
 // ---------- sample points ----------
 const isMid = s => s.type === "rx" || s.type === "pt";
 const isUW = s => s.type === "pt" && s.kind === "sample" && s.mode === "underway";
-function wpIds(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (s.type === "pt" && s.kind !== "sample") m.set(s, "W" + ++n); }); return m; }
+function stopNums(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (isMid(s)) m.set(s, ++n); }); return m; }   // receivers, waypoints and sample points share one numbering in route order
 function sampleIds(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (isMid(s) && s.kind === "sample") m.set(s, "S" + String(++n).padStart(2, "0")); }); return m; }
 function ptProblem(lat, lon) {   // a sample point must be in navigable water and outside every keep-out (same margin as the routing grid)
   const [i, j] = cellOf(lat, lon); if (!(i >= 0 && j >= 0 && i < NX && j < NY) || !WATER[j * NX + i]) return `That spot is on land or shallower than ${D.minDepth} m.`;
@@ -703,8 +708,8 @@ function drawStatic() {
     .on("contextmenu", e => { L.DomEvent.stop(e); siteMenu(e.latlng, p.name, "Delete pin", () => deletePin(p.id)); })
     .on("dragend", e => { const ll = e.target.getLatLng(); p.lat = +ll.lat.toFixed(6); p.lon = +ll.lng.toFixed(6); savePins(); legCache.clear(); render(); })
     .addTo(G.sites));
-  const ids = sampleIds(), wids = wpIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
-  S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u) || wids.get(u)).filter(Boolean).join(", ");
+  const ids = sampleIds(), uses = id => S.route.stops.filter(s => s.type === "pt" && s.ref === id);
+  S.spots.forEach(sp => { const us = uses(sp.id), s = us[0], lab = us.map(u => ids.get(u)).filter(Boolean).join(", ");
     const cls = !s ? "idle" : s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : "";
     L.marker([sp.lat, sp.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="ptm ${cls}"></div>${S.layers.labels && (lab || !s) ? `<span class="rxlab" style="left:19px;top:0">${lab || "unused"}</span>` : ""}</div>`, iconSize: [16, 16], iconAnchor: [8, 16] }) })
       .bindTooltip(`<b>${s ? esc(stopName(s)) : "Waypoint (not in this route)"}</b><br>${sp.lat.toFixed(5)}, ${sp.lon.toFixed(5)}${s && s.kind !== "sample" ? `<br>${+s.dwell ? `stop ${Math.round(s.dwell * 60)} min` : "drive through"}` : ""}${s && s.kind === "sample" ? `<br>${s.mode === "underway" ? "sampler runs while moving" : `hold ${Math.round(s.dwell * 60)} min`} &middot; ${+s.rep || 1} sample${(+s.rep || 1) > 1 ? "s" : ""}` : ""}<br><i>${S.mode === "build" || S.mode === "sample" ? "click to add as a stop, right-click to delete, " : "click to delete, "}drag to move</i>`, { direction: "top", offset: [0, -16] })
@@ -729,8 +734,8 @@ function drawRoute(P) {
         icon: L.divIcon({ className: "", html: `<div class="arrow" style="transform:rotate(${ang}deg)">&#9650;</div>`, iconSize: [12, 12], iconAnchor: [6, 6] }) }).addTo(G.arrows); carry = d + gap - len; }
       if (carry >= len) carry -= len; } }
   let n = 0;
-  P.times.forEach(x => { if (x.s.type !== "rx") return; n++; const sm = x.s.kind === "sample";
-    L.marker(stopPos(x.s), { pane: "stops", interactive: false, icon: L.divIcon({ className: "", html: `<div class="stopn ${sm ? "sample" : ""}">${n}</div>`, iconSize: sm ? [24, 24] : [20, 20] }) }).addTo(G.stops); });
+  P.times.forEach(x => { if (!isMid(x.s)) return; n++; const sm = x.s.kind === "sample", uw = isUW(x.s), wp = x.s.type === "pt" && !sm;
+    L.marker(stopPos(x.s), { pane: "stops", interactive: false, icon: L.divIcon({ className: "", html: `<div class="stopn ${uw ? "uw" : sm ? "sample" : wp ? "wp" : ""}">${n}</div>`, iconSize: sm ? [24, 24] : [20, 20] }) }).addTo(G.stops); });
 }
 function drawTrack() { G.track.clearLayers(); if (!S.track) return;
   L.polyline(S.track.pts.map(p => [p.lat, p.lon]), { pane: "track", color: css("--track"), weight: 3, dashArray: "7 5", interactive: false }).addTo(G.track); }
@@ -773,11 +778,14 @@ function render() {
   const ol = document.getElementById("stops"), ids = sampleIds(); let n = 0;
   const prioSel = (s, idx) => `<select class="field" data-prio="${idx}" aria-label="Priority" title="Trim to deadline drops low, then medium priority stops first"><option value="high" ${s.prio === "high" ? "selected" : ""}>high priority</option><option value="med" ${(s.prio || "med") === "med" ? "selected" : ""}>medium priority</option><option value="low" ${s.prio === "low" ? "selected" : ""}>low priority</option></select>`;
   const moveBtns = idx => `<button class="mini" data-up="${idx}" title="Move up">&uarr;</button><button class="mini" data-dn="${idx}" title="Move down">&darr;</button><button class="mini" data-rm="${idx}" title="Remove">&times;</button>`;
+  const ss = document.getElementById("sampSum"), used = P.sampling ? P.sampling.need : 0;
+  ss.innerHTML = `1 sample = <b>${S.samp.minPer} min</b> &middot; ${S.samp.reps} per new sampling stop &middot; ${S.samp.cap ? `${used} of ${S.samp.cap} cartridges` : "cartridges not checked"} &middot; <button class="linkbtn" id="sampOpen">change under Sampling</button>`;
+  document.getElementById("sampOpen").onclick = () => { const g = document.getElementById("sampGrp"); g.open = true; g.scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("spMin").focus({ preventScroll: true }); };
   const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop"><span class="sub">${isUW(s) ? `samples &asymp; ${Math.round((+s.rep || 1) * S.samp.minPer)} min while moving` : `samples &times; ${S.samp.minPer} min =`}</span>` : "";
   const minIn = (s, idx) => `<input class="field" type="number" min="0" step="${s.kind === "sample" ? S.samp.minPer : 5}" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="${s.kind === "sample" ? "Minutes on station; changes the number of samples (one sample = " + S.samp.minPer + " min)" : "Minutes at this stop"}"><span class="sub">min</span>`;
   ol.innerHTML = P.times.map((x, i) => {
-    const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isRx) n++;
-    const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${ids.get(s) || wpIds().get(s) || "&middot;"}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
+    const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isMid(s)) n++;
+    const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${n}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
     const pos = stopPos(s), r = isRx ? RX[s.ref] : null;
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
         ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
@@ -941,7 +949,8 @@ function shareTeam(r) {
   if (url.length < 7800) { window.open(url, "_blank", "noopener"); toast("GitHub opened with the route filled in: press Commit changes. It shows under Team routes for everyone within a few minutes."); }
   else { dl(fname, body, "application/json"); window.open(`https://github.com/${TEAM.repo}/upload/${TEAM.branch}/${TEAM.dir}`, "_blank", "noopener"); toast("Route file downloaded (too long for a link): drag it onto the GitHub upload page that just opened and press Commit changes."); }
 }
-function loadRoute(r) { r = rxRenum(r); S.route = { id: r.id ?? null, name: r.name || "", stops: migratePts(JSON.parse(JSON.stringify(r.stops || []))) }; S.history = [];
+const retime = stops => { stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = (+x.rep || 1) * S.samp.minPer / 60; }); return stops; };   // time on station follows minutes per sample
+function loadRoute(r) { r = rxRenum(r); S.route = { id: r.id ?? null, name: r.name || "", stops: retime(migratePts(JSON.parse(JSON.stringify(r.stops || [])))) }; S.history = [];
   if (r.date) { S.date = r.date; document.getElementById("date").value = r.date; }      // the saved mission day, speed, launch time and current mode come back with the route
   if (r.cur) { S.cur = r.cur; if (S.cur === "live") ensureWx(S.date).then(() => render()).catch(() => {}); }
   if (r.kn) S.kn = +r.kn; if (r.launch) { document.getElementById("launch").value = r.launch; S.launch = (([h, m]) => h + m / 60)(r.launch.split(":").map(Number)); }
@@ -1264,7 +1273,7 @@ function readLink() { const m = location.hash.match(/#r=([\w-]+)/); if (!m) retu
     const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser], i) => t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
         : { type: "pt", ref, mode: uw ? "underway" : "station", ...(ser ? { series: ser } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 })
       : { type: T[t], ref, dwell: dw, prio: Pr[pr], rep: rep || 1, kind: T[t] === "rx" ? (k === "s" ? "sample" : "pass") : i === 0 ? "start" : k === "c" ? "stop" : "end" });
-    S.route = { id: null, name: d.n || "Shared route", stops: migratePts(rxRenum({ stops: st, rxv: d.v }).stops) };
+    S.route = { id: null, name: d.n || "Shared route", stops: retime(migratePts(rxRenum({ stops: st, rxv: d.v }).stops)) };
     if (d.k) S.kn = d.k; if (d.d) S.date = d.d; if (d.l) { document.getElementById("launch").value = d.l; S.launch = (([h, mm]) => h + mm / 60)(d.l.split(":").map(Number)); } if (d.c) S.cur = d.c;
     toast(`Opened shared route "${S.route.name}". Save it to keep it.`); dirty(); } catch (e) { toast("That link does not contain a readable route."); }
 }
