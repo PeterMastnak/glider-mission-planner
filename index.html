@@ -169,7 +169,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
 @media (max-width: 900px) {
   .app { grid-template-columns:minmax(0,1fr); grid-template-rows:auto 72vh auto; height:auto; } html, body { overflow-x:hidden; }
   header { flex-wrap:wrap; padding:10px 12px; gap:8px; } .brand { font-size:15px; } .brand small, .spacer { display:none; } #theme { margin-left:auto; }
-  .pill { order:3; flex:1 1 100%; } .pill button { flex:1; }
+  .pill { order:3; flex:1 1 100%; } .pill button { flex:1; min-width:0; padding:6px 4px; white-space:nowrap; }
   aside { border-left:0; padding:14px 12px 40px; }
   .legend, .leaflet-control-zoom, .leaflet-control-scale { display:none; }
   .toolbar { top:10px; max-width:calc(100% - 20px); } .toolbar button { padding:7px 7px; font-size:12px; } .toolbar .tx { display:none; }
@@ -663,6 +663,12 @@ const BASES = {
   dark: ["Dark", () => [L.tileLayer(esri("Canvas/World_Dark_Gray_Base"), { maxNativeZoom: 16, maxZoom: 18, attribution: "Esri, HERE, Garmin, OpenStreetMap contributors" }), L.tileLayer(esri("Canvas/World_Dark_Gray_Reference"), { maxNativeZoom: 16, maxZoom: 18 })]],
   ocean: ["Ocean", () => [L.tileLayer(esri("Ocean/World_Ocean_Base"), { maxNativeZoom: 13, maxZoom: 18, attribution: "Esri, Garmin, GEBCO, NOAA NGDC" }), L.tileLayer(esri("Ocean/World_Ocean_Reference"), { maxNativeZoom: 13, maxZoom: 18 })]],
   sat: ["Satellite", () => [L.tileLayer(esri("World_Imagery"), { maxZoom: 18, attribution: "Esri, Maxar, Earthstar Geographics" })]] };
+// NOAA Chart Display Service (ENC data drawn with paper-chart symbols, public domain). Its tile cache is not served, so each tile is a 512 px export; soundings in metres
+const NOAA = "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export",
+  NOAA_DP = encodeURIComponent(JSON.stringify({ ECDISParameters: { version: "10.9", DynamicParameters: { Parameter: [{ name: "DisplayDepthUnits", value: 1 }] } } }));
+const ChartTiles = L.TileLayer.extend({ getTileUrl(c) { const ts = this.getTileSize().x, W = 2 * Math.PI * 6378137, n = 2 ** c.z * 256 / ts, w = W / n, x0 = -W / 2 + c.x * w, y1 = W / 2 - c.y * w;
+  return `${NOAA}?bbox=${x0},${y1 - w},${x0 + w},${y1}&bboxSR=3857&imageSR=3857&size=${ts},${ts}&format=png&f=image&display_params=${NOAA_DP}`; } });
+BASES.chart = ["NOAA chart", () => [new ChartTiles("", { tileSize: 512, maxZoom: 18, attribution: "NOAA Office of Coast Survey (ENC), not for navigation" })]];
 let baseLayers = [];
 function setBase(k) { baseLayers.forEach(l => map.removeLayer(l)); baseLayers = BASES[k][1](); baseLayers.forEach(l => l.addTo(map).bringToBack()); S.base = k;
   const el = document.getElementById("basemap"); el.innerHTML = Object.entries(BASES).map(([kk, [n]]) => `<button class="${kk === k ? "on" : ""}" data-k="${kk}">${n}</button>`).join("");
