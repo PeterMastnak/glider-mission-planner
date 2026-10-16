@@ -936,6 +936,8 @@ function shareTeam(r) {
   else { dl(fname, body, "application/json"); window.open(`https://github.com/${TEAM.repo}/upload/${TEAM.branch}/${TEAM.dir}`, "_blank", "noopener"); toast("Route file downloaded (too long for a link): drag it onto the GitHub upload page that just opened and press Commit changes."); }
 }
 function loadRoute(r) { r = rxRenum(r); S.route = { id: r.id ?? null, name: r.name || "", stops: migratePts(JSON.parse(JSON.stringify(r.stops || []))) }; S.history = [];
+  if (r.date) { S.date = r.date; document.getElementById("date").value = r.date; }      // the saved mission day, speed, launch time and current mode come back with the route
+  if (r.cur) { S.cur = r.cur; if (S.cur === "live") ensureWx(S.date).then(() => render()).catch(() => {}); }
   if (r.kn) S.kn = +r.kn; if (r.launch) { document.getElementById("launch").value = r.launch; S.launch = (([h, m]) => h + m / 60)(r.launch.split(":").map(Number)); }
   document.getElementById("savedState").textContent = r.id ? "saved" : ""; render(); }
 
