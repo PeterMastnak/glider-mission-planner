@@ -300,7 +300,7 @@ table.grid th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em
       <label class="lbl">Notes<textarea class="field" id="ctNotes" rows="3" placeholder="samples, filters, who drives to which ramp..."></textarea></label>
     </div></details>
     <div class="sec"><div class="label">Export this route</div>
-      <div class="row"><button class="btn" data-x="op">Operator CSV</button><button class="btn" data-x="samples">Sample log CSV</button><button class="btn" data-x="gpx">GPX</button><button class="btn" data-x="kml">KML</button><button class="btn" data-x="csv">Planner CSV</button><button class="btn" data-x="json">JSON</button><button class="btn" data-x="keepout">Keep-out zones</button></div>
+      <div class="row"><button class="btn" data-x="op">Operator CSV</button><button class="btn" data-x="tsv">Operator TSV</button><button class="btn" data-x="geojson">GeoJSON</button><button class="btn" data-x="samples">Sample log CSV</button><button class="btn" data-x="gpx">GPX</button><button class="btn" data-x="kml">KML</button><button class="btn" data-x="csv">Planner CSV</button><button class="btn" data-x="json">JSON</button><button class="btn" data-x="keepout">Keep-out zones</button></div>
       <div class="row" style="margin-top:8px"><label class="btn">Import route JSON<input type="file" id="imp" accept=".json" hidden></label><label class="btn">Import GPS track (GPX / CSV)<input type="file" id="impTrack" accept=".gpx,.csv,.txt" hidden></label><button class="btn" id="trackBtn" hidden>Track vs plan</button></div></div>
     <div class="sec"><div class="label">Launch / pickup sites</div><div class="list" id="sites"></div></div>
     <details class="grp"><summary>How routes, times and battery are calculated</summary><div class="body small" style="line-height:1.55">
@@ -1223,15 +1223,28 @@ function rows() {          // every point the navigator needs, in order: harbor 
 const ACTION = r => ({ ramp: ["MANUAL", "HARBOR"], harbor: ["MANUAL", "HARBOR"], ramp_end: ["MANUAL", "HARBOR"], ramp_stop: ["MANUAL", "HARBOR"], pin_stop: ["LOITER", "STOP"], start: ["START", "MISSION"], end: ["END", "MISSION"], via: ["GOTO", "ROUTE"],
   station: ["LOITER", "RECEIVER"], pass: [r.dwell > 0 ? "LOITER" : "GOTO", "RECEIVER"], sample_st: ["LOITER", "SAMPLE"], sample_uw: ["GOTO", "SAMPLE"], wp: [r.dwell > 0 ? "LOITER" : "GOTO", r.dwell > 0 ? "STOP" : "ROUTE"] })[r.kind];
 const q = s => `"${String(s).replace(/"/g, '""')}"`;
+function opTable() {          // operator waypoint table shared by the CSV, TSV and GeoJSON exports
+  const R = rows(), O = S.ops; let cum = 0;
+  const head = ["wp", "name", "action", "wp_type", "lat_wgs84", "lon_wgs84", "lat_ddm", "lon_ddm", "loiter_min", "loiter_radius_m", "accept_radius_m", "speed_kn", "course_to_next_deg_true", "dist_to_next_m", "cum_dist_m", "eta_local_pacific", "receiver_num", "receiver_lat_wgs84", "receiver_lon_wgs84", "wp_to_receiver_m", "receiver_keepout_m", "next_leg_min_dist_to_any_receiver_m", "sample_id", "sample_mode", "n_samples", "note"];
+  const text = head.map(h => ["name", "lat_ddm", "lon_ddm", "eta_local_pacific", "note"].includes(h));
+  const N = (v, d = 0) => (+v).toFixed(d);
+  const out = R.map((r, i) => { const nx = R[i + 1], [act, typ] = ACTION(r), loit = act === "LOITER", dn = nx ? dist([r.lat, r.lon], [nx.lat, nx.lon]) : 0;
+    const row = [i + 1, r.name, act, typ, N(r.lat, 6), N(r.lon, 6), ddm(r.lat, "N", "S"), ddm(r.lon, "E", "W"), loit ? Math.round(r.dwell * 60) : "", loit ? O.loiter : "", O.accept, typ === "HARBOR" ? Math.min(S.kn, 3) : S.kn,
+      nx ? N(bearing([r.lat, r.lon], [nx.lat, nx.lon])) : "", nx ? N(dn) : "", N(cum), r.eta != null ? `${S.date} ${when(r.eta)}` : "",
+      r.rx ? r.rx.num : "", r.rx ? N(r.rx.lat, 6) : "", r.rx ? N(r.rx.lon, 6) : "", r.rx ? N(dist([r.lat, r.lon], [r.rx.lat, r.rx.lon])) : "", r.rx ? KO(r.rx) : "",
+      nx && typ !== "HARBOR" && ACTION(nx)[1] !== "HARBOR" ? N(rxClearance([[r.lat, r.lon], [nx.lat, nx.lon]]).d) : "", r.sid || "", r.smode || "", r.rep ?? "", r.note || ""];
+    cum += dn; return row; });
+  return { head, text, rows: out, R, total: cum };
+}
 const exporters = {
-  op: () => { const R = rows(), O = S.ops; let cum = 0;
-    const head = "wp,name,action,wp_type,lat_wgs84,lon_wgs84,lat_ddm,lon_ddm,loiter_min,loiter_radius_m,accept_radius_m,speed_kn,course_to_next_deg_true,dist_to_next_m,cum_dist_m,eta_local_pacific,receiver_num,receiver_lat_wgs84,receiver_lon_wgs84,wp_to_receiver_m,receiver_keepout_m,next_leg_min_dist_to_any_receiver_m,sample_id,sample_mode,n_samples,note\n";
-    dl(slug() + "_operator.csv", head + R.map((r, i) => { const nx = R[i + 1], [act, typ] = ACTION(r), loit = act === "LOITER", dn = nx ? dist([r.lat, r.lon], [nx.lat, nx.lon]) : 0;
-      const row = [i + 1, q(r.name), act, typ, r.lat.toFixed(6), r.lon.toFixed(6), q(ddm(r.lat, "N", "S")), q(ddm(r.lon, "E", "W")), loit ? Math.round(r.dwell * 60) : "", loit ? O.loiter : "", O.accept, typ === "HARBOR" ? Math.min(S.kn, 3) : S.kn,
-        nx ? bearing([r.lat, r.lon], [nx.lat, nx.lon]).toFixed(0) : "", nx ? dn.toFixed(0) : "", cum.toFixed(0), r.eta != null ? q(`${S.date} ${when(r.eta)}`) : "",
-        r.rx ? r.rx.num : "", r.rx ? r.rx.lat.toFixed(6) : "", r.rx ? r.rx.lon.toFixed(6) : "", r.rx ? dist([r.lat, r.lon], [r.rx.lat, r.rx.lon]).toFixed(0) : "", r.rx ? KO(r.rx) : "",
-        nx && typ !== "HARBOR" && ACTION(nx)[1] !== "HARBOR" ? rxClearance([[r.lat, r.lon], [nx.lat, nx.lon]]).d.toFixed(0) : "", r.sid || "", r.smode || "", r.rep ?? "", q(r.note)].join(",");
-      cum += dn; return row; }).join("\n") + "\n", "text/csv"); },
+  op: () => { const T = opTable(); dl(slug() + "_operator.csv", [T.head, ...T.rows.map(r => r.map((v, k) => T.text[k] && !(v === "" && T.head[k] === "eta_local_pacific") ? q(v) : v))].map(r => r.join(",")).join("\n") + "\n", "text/csv"); },
+  tsv: () => { const T = opTable(), cl = v => String(v).replace(/[\t\r\n]+/g, " ");
+    dl(slug() + "_operator.tsv", [T.head, ...T.rows].map(r => r.map(cl).join("\t")).join("\n") + "\n", "text/tab-separated-values"); },
+  geojson: () => { const T = opTable(), R = T.R, prop = r => Object.fromEntries(T.head.map((h, k) => [h, r[k] === "" ? null : T.text[k] || isNaN(r[k]) ? r[k] : +r[k]]));
+    dl(slug() + "_operator.geojson", JSON.stringify({ type: "FeatureCollection", name: S.route.name || "route",
+      properties: { route: S.route.name || "", date: S.date, speed_kn: S.kn, crs: "WGS84 (EPSG:4326), coordinates [lon, lat]", created_by: "Glider Mission Planner" },
+      features: [{ type: "Feature", properties: { name: S.route.name || "route", kind: "route", n_waypoints: R.length, total_dist_m: +T.total.toFixed(0) }, geometry: { type: "LineString", coordinates: R.map(r => [+r.lon.toFixed(6), +r.lat.toFixed(6)]) } },
+        ...R.map((r, i) => ({ type: "Feature", properties: prop(T.rows[i]), geometry: { type: "Point", coordinates: [+r.lon.toFixed(6), +r.lat.toFixed(6)] } }))] }, null, 1) + "\n", "application/geo+json"); },
   csv: () => { const R = rows(); dl(slug() + ".csv", "day,name,lat,lon,kind,dwell_h,note\n" + R.map((r, i) => `1,${q(r.name)},${r.lat.toFixed(6)},${r.lon.toFixed(6)},${i === 0 ? "launch" : i === R.length - 1 ? "recover" : { station: "station", pass: "pass", sample_st: "sample", sample_uw: "sample_underway", wp: "via" }[r.kind] || "via"},${(+r.dwell).toFixed(2)},${q(r.note)}`).join("\n") + "\n", "text/csv"); },
   gpx: () => { const R = rows(), alt = [...D.ramps.map(r => ({ name: r.name, lat: r.lat, lon: r.lon })), ...S.pins];
     dl(slug() + ".gpx", `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Glider Mission Planner" xmlns="http://www.topografix.com/GPX/1/1">\n` +
