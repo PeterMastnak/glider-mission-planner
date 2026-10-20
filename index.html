@@ -440,9 +440,9 @@ const dist = (a, b) => { const dy = (b[0] - a[0]) * 111195, dx = (b[1] - a[1]) *
 const plen = p => p.reduce((s, x, i) => i ? s + dist(p[i - 1], x) : 0, 0);
 function bearing(a, b) { const y = Math.sin(toRad(b[1] - a[1])) * Math.cos(toRad(b[0])), x = Math.cos(toRad(a[0])) * Math.sin(toRad(b[0])) - Math.sin(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.cos(toRad(b[1] - a[1])); return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360; }
 function rxClearanceOne(a, b, r) { const cl = Math.cos(toRad(a[0])), bx = (b[1] - a[1]) * cl * 111195, by = (b[0] - a[0]) * 111195, L2 = bx * bx + by * by, px = (r.lon - a[1]) * cl * 111195, py = (r.lat - a[0]) * 111195, t = L2 ? Math.max(0, Math.min(1, (px * bx + py * by) / L2)) : 0; return Math.hypot(px - t * bx, py - t * by); }
-function rxClearance(p) { let best = 1e9, who = null, bm = 1e9;
+function rxClearance(p, skip = []) { let best = 1e9, who = null, bm = 1e9;
   for (let k = 1; k < p.length; k++) { const a = p[k - 1], b = p[k], cl = Math.cos(toRad(a[0])), bx = (b[1] - a[1]) * cl * 111195, by = (b[0] - a[0]) * 111195, L2 = bx * bx + by * by;
-    for (const r of D.rx) { const px = (r.lon - a[1]) * cl * 111195, py = (r.lat - a[0]) * 111195, t = L2 ? Math.max(0, Math.min(1, (px * bx + py * by) / L2)) : 0, d = Math.hypot(px - t * bx, py - t * by);
+    for (const r of D.rx) { if (skip.includes(r)) continue; const px = (r.lon - a[1]) * cl * 111195, py = (r.lat - a[0]) * 111195, t = L2 ? Math.max(0, Math.min(1, (px * bx + py * by) / L2)) : 0, d = Math.hypot(px - t * bx, py - t * by);
       if (d - KO(r) < bm) { bm = d - KO(r); best = d; who = r; } } }
   return { d: best, who, m: bm }; }   // d = distance to the station with the least margin over its keep-out
 const MPA_BB = D.mpas.map(m => { let a = 90, b = -90, c = 180, d = -180; m.rings.forEach(r => r.forEach(([x, y]) => { a = Math.min(a, y); b = Math.max(b, y); c = Math.min(c, x); d = Math.max(d, x); })); return [a, b, c, d]; });
@@ -478,10 +478,12 @@ const isMid = s => s.type === "rx" || s.type === "pt";
 const isUW = s => s.type === "pt" && s.kind === "sample" && s.mode === "underway";
 function stopNums(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (isMid(s)) m.set(s, ++n); }); return m; }   // receivers, waypoints and sample points share one numbering in route order
 function sampleIds(stops = S.route.stops) { const m = new Map(); let n = 0; stops.forEach(s => { if (isMid(s) && s.kind === "sample") m.set(s, "S" + String(++n).padStart(2, "0")); }); return m; }
-function ptProblem(lat, lon) {   // a sample point must be in navigable water and outside every keep-out (same margin as the routing grid)
+function ptProblem(lat, lon, strict) {   // a waypoint must be in navigable water; hand-placed ones may go inside a keep-out (even on the buoy), generated series points (strict) may not
   const [i, j] = cellOf(lat, lon); if (!(i >= 0 && j >= 0 && i < NX && j < NY) || !WATER[j * NX + i]) return `That spot is on land or shallower than ${D.minDepth} m.`;
-  const r = D.rx.find(r => dist([lat, lon], [r.lat, r.lon]) < KO(r) + 50); return r ? `Too close to #${r.num} ${r.name}: keep waypoints more than ${KO(r) + 50} m away.` : null; }
+  const r = strict && D.rx.find(r => dist([lat, lon], [r.lat, r.lon]) < KO(r) + 50); return r ? `Too close to #${r.num} ${r.name}: keep waypoints more than ${KO(r) + 50} m away.` : null; }
+const koOf = (lat, lon) => D.rx.filter(r => dist([lat, lon], [r.lat, r.lon]) < KO(r));     // keep-outs a hand-placed waypoint sits in
 function ptWarn(lat, lon, self) { const w = []; if (inKelp(lat, lon)) w.push("in mapped kelp");
+  koOf(lat, lon).forEach(r => { const d = dist([lat, lon], [r.lat, r.lon]); w.push(d < 5 ? `on #${r.num} ${r.name}` : `${d.toFixed(0)} m from #${r.num}, inside its ${KO(r)} m keep-out`); });
   if (S.spots.some(x => x !== self && dist([lat, lon], [x.lat, x.lon]) < 50)) w.push("within 50 m of another waypoint"); return w; }
 // sample sites live on the map like pins (S.spots, saved in this browser); a route visits one with a stop {type: "pt", ref: site id}
 function spotOf(s) { return s.ref ? S.spots.find(x => x.id === s.ref) : s.lat != null ? s : null; }
@@ -509,7 +511,7 @@ function addSeries(i, by, v, mode) {   // sample points along leg i (the leg arr
   if (by === "n") { const n = Math.round(v); if (!(n >= 1)) return; for (let k = 1; k <= n; k++) ds.push(L * k / (n + 1)); }
   else { const step = by === "km" ? v * 1000 : v / 60 * L / Math.max(1e-6, leg.h); if (!(step > 0)) return; for (let d = step; d < L - Math.min(200, step / 2); d += step) ds.push(d); }
   if (!ds.length) { toast("The leg is shorter than that spacing."); return; } if (ds.length > 60) { toast(`That would add ${ds.length} points; use a larger spacing.`); return; }
-  const tag = "s" + Date.now().toString(36), pts = ds.map(d => alongPts(leg.pts, d)).filter(p => !ptProblem(...p)), skip = ds.length - pts.length;
+  const tag = "s" + Date.now().toString(36), pts = ds.map(d => alongPts(leg.pts, d)).filter(p => !ptProblem(...p, true)), skip = ds.length - pts.length;
   if (!pts.length) { toast("No valid points at that spacing on this leg."); return; }
   S.serLeg = null;
   change(() => { const st = S.route.stops; st.splice(st.indexOf(to), 0, ...pts.map(p => newPt(newSpot(p[0], p[1], { series: tag }), { mode, series: tag, ...(mode === "underway" ? { dwell: 0 } : {}) }))); },
@@ -595,7 +597,7 @@ function compute(o = {}) {
     if (i === 0) { P.times.push({ s, arr: null, dep: t, dwell: 0 }); return; }
     const p = findPath(stopPos(st[i - 1]), stopPos(s)), r = legRun(p.pts, t, o), km = plen(p.pts) / 1000;
     P.legs.push({ ...p, km, ...r, t0: t }); P.km += km; P.kelpKm += r.kelpM / 1000; r.mpas.forEach(m => P.mpas.add(m)); P.samples.push(...r.samples);
-    if (!p.ok) P.ok = false; const c = rxClearance(p.pts); if (c.m < P.clear.m) P.clear = c;
+    if (!p.ok) P.ok = false; const c = rxClearance(p.pts, [st[i - 1], s].filter(x => x.type === "pt").flatMap(x => koOf(...stopPos(x)))); if (c.m < P.clear.m) P.clear = c;   // a waypoint placed inside a keep-out is on purpose
     t += r.h; const arr = t; let dwell = isUW(s) ? 0 : s.kind === "sample" || s.kind === "pass" || s.kind === "stop" ? +s.dwell || 0 : 0, halt = null;
     if (s.kind === "stop") { const hi = harborPath(s, false), ho = harborPath(s, true);      // mid-route ramp: operator drives in, stops, drives back out
       if (hi) { halt = { in: { pts: hi, km: plen(hi) / 1000, h: plen(hi) / 1000 / hv }, out: { pts: ho, km: plen(ho) / 1000, h: plen(ho) / 1000 / hv } }; dwell += halt.in.h + halt.out.h; P.harborMid.push(halt); } }
@@ -696,7 +698,7 @@ function drawStatic() {
     const lab = S.layers.labels ? `<span class="rxlab ${r.live ? "live" : ""}" style="left:22px">#${r.num}${z >= 11.5 ? " " + esc(r.name) : ""}</span>` : "";
     L.marker([r.lat, r.lon], { pane: "rx", icon: L.divIcon({ className: "", html: `<div class="rxwrap ${picked.has(r.num) ? "picked" : ""}">${r.ext ? buoy : tri}${lab}</div>`, iconSize: [20, 18], iconAnchor: [10, 12] }) })
       .bindTooltip(`<b>#${r.num} ${esc(r.name)}</b>${r.live ? " &middot; live" : ""}${r.ext ? `<br>${esc(r.owner)} surface buoy, not ours &middot; keep-out ${KO(r)} m` : ""}<br>${r.lat.toFixed(5)}, ${r.lon.toFixed(5)} &middot; ${r.depth} m<br>stop ${SO(r)} m off at ${r.slat.toFixed(5)}, ${r.slon.toFixed(5)}${inKelp(r.slat, r.slon) ? "<br><b>stand-off point is in mapped kelp</b>" : ""}${S.mode === "build" ? "<br><i>click to add as a stop</i>" : ""}`, { direction: "top", offset: [0, -12] })
-      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build") addRx(r.num); }).addTo(G.rx);
+      .on("click", e => { L.DomEvent.stop(e); if (S.mode === "build") addRx(r.num); else if (S.mode === "sample") addPt(r.lat, r.lon); }).addTo(G.rx);
   });
   G.sites.clearLayers();
   D.ramps.forEach((r, i) => L.marker([r.lat, r.lon], { pane: "sites", draggable: true, icon: L.divIcon({ className: "", html: `<div style="position:relative"><div class="rampm">R</div><span class="rlab">${esc(r.name)}${r.approx ? " (approx)" : ""}</span></div>`, iconSize: [18, 18] }) })
@@ -751,7 +753,7 @@ function render() {
   PLAN = compute(); const P = PLAN, st = S.route.stops;
   drawStatic(); drawRoute(P); drawTrack();
   document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Click a pin to delete it; drag to move."
-    : S.mode === "sample" ? (!st.length ? "Click the water to drop waypoints. Then click a ramp in <b>Build route</b> to start, and click waypoints and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new waypoint becomes the next stop. Click an existing waypoint to visit it." : "Click the water: the new waypoint joins the nearest leg (driven through; set a stop or sample in the stop list). Click an existing waypoint to add it before the finish.")
+    : S.mode === "sample" ? (!st.length ? "Click the water to drop waypoints. Then click a ramp in <b>Build route</b> to start, and click waypoints and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new waypoint becomes the next stop. Click an existing waypoint to visit it." : "Click the water: the new waypoint joins the nearest leg (driven through; set a stop or sample in the stop list). Click an existing waypoint to add it before the finish.") + " Click a receiver or buoy to put a waypoint right on it."
     : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route."
     : st.length && st[0].kind !== "start" ? "The route has no start: click a ramp or pin to set one."
     : !st.length ? "<b>1.</b> Click a green ramp to set the start."
