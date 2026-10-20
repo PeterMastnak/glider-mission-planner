@@ -74,6 +74,8 @@ ol.stops li.removed { opacity:.45; }
 .ptm { width:16px; height:16px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); background:var(--sample); border:2px solid var(--halo); box-shadow:0 1px 4px rgba(0,0,0,.5); cursor:grab; }
 .ptm.uw { background:var(--halo); border:3px solid var(--sample); } .ptm.idle { opacity:.5; } .ptm.wp { background:var(--route2); border-radius:3px; transform:none; width:12px; height:12px; }
 .serform { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:4px 10px 6px 44px; } .serform select, .serform input { height:26px; padding:2px 6px; font-size:12px; } .serform input { width:64px; }
+.rings { flex-basis:100%; display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; font-size:11.5px; color:var(--dim); } .rings input { width:64px; }
+.ringlab { font:700 10px Inter; color:var(--ink); text-shadow:0 0 3px var(--halo), 0 0 3px var(--halo); white-space:nowrap; transform:translate(-50%, -100%); display:inline-block; }
 .linkbtn { background:none; border:0; padding:0; color:var(--route); font:inherit; cursor:pointer; text-decoration:underline; } .dot.ramp { background:var(--ramp); color:#052e12; } .dot.pin { background:var(--pin); color:#3b1603; }
 .nm { font-weight:600; font-size:13.5px; } .sub { font-size:11px; color:var(--muted); font-family:'JetBrains Mono',monospace; }
 .ctl { display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-top:5px; }
@@ -740,6 +742,9 @@ function drawRoute(P) {
       for (let d = carry; d < len; d += gap) { L.marker(map.layerPointToLatLng(L.point(a.x + (b.x - a.x) * d / len, a.y + (b.y - a.y) * d / len)), { pane: "arrows", interactive: false,
         icon: L.divIcon({ className: "", html: `<div class="arrow" style="transform:rotate(${ang}deg)">&#9650;</div>`, iconSize: [12, 12], iconAnchor: [6, 6] }) }).addTo(G.arrows); carry = d + gap - len; }
       if (carry >= len) carry -= len; } }
+  P.times.forEach(x => (x.s.rings || []).forEach(m => { const p = stopPos(x.s), col = x.s.kind === "sample" ? css("--sample") : css("--route2");      // radius rings around a waypoint
+    L.circle(p, { radius: m, pane: "route", color: col, weight: 2, dashArray: "6 5", fill: false, interactive: false }).addTo(G.route);
+    L.marker([p[0] + m / 111195, p[1]], { pane: "stops", interactive: false, icon: L.divIcon({ className: "", html: `<span class="ringlab">${m} m</span>`, iconSize: [0, 0] }) }).addTo(G.stops); }));
   let n = 0;
   P.times.forEach(x => { if (!isMid(x.s)) return; n++; const sm = x.s.kind === "sample", uw = isUW(x.s), wp = x.s.type === "pt" && !sm;
     L.marker(stopPos(x.s), { pane: "stops", interactive: false, icon: L.divIcon({ className: "", html: `<div class="stopn ${uw ? "uw" : sm ? "sample" : wp ? "wp" : ""}">${n}</div>`, iconSize: sm ? [24, 24] : [20, 20] }) }).addTo(G.stops); });
@@ -789,6 +794,7 @@ function render() {
   ss.innerHTML = `1 sample = <b>${S.samp.minPer} min</b> &middot; ${S.samp.reps} per new sampling stop &middot; ${S.samp.cap ? `${used} of ${S.samp.cap} cartridges` : "cartridges not checked"} &middot; <button class="linkbtn" id="sampOpen">change under Sampling</button>`;
   document.getElementById("sampOpen").onclick = () => { const g = document.getElementById("sampGrp"); g.open = true; g.scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("spMin").focus({ preventScroll: true }); };
   const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop"><span class="sub">${isUW(s) ? `samples &asymp; ${Math.round((+s.rep || 1) * S.samp.minPer)} min while moving` : `samples &times; ${S.samp.minPer} min =`}</span>` : "";
+  const ringsIn = (s, idx) => `<div class="rings">${(s.rings || []).map((m, k) => `<span>radius ${k + 1} <input class="field" type="number" min="1" step="10" value="${m}" data-ring="${idx}:${k}" aria-label="Radius ${k + 1} in metres"> m <button class="mini" style="display:inline-grid;width:20px;height:20px" data-ringrm="${idx}:${k}" title="Remove this radius">&times;</button></span>`).join("")}${(s.rings || []).length < 4 ? `<button class="linkbtn" data-ringadd="${idx}" title="Draw a circle of a set radius around this waypoint">+ radius</button>` : ""}</div>`;
   const minIn = (s, idx) => `<input class="field" type="number" min="0" step="${s.kind === "sample" ? S.samp.minPer : 5}" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="${s.kind === "sample" ? "Minutes on station; changes the number of samples (one sample = " + S.samp.minPer + " min)" : "Minutes at this stop"}"><span class="sub">min</span>`;
   ol.innerHTML = P.times.map((x, i) => {
     const s = x.s, idx = st.indexOf(s), isRx = s.type === "rx", isPt = s.type === "pt"; if (isMid(s)) n++;
@@ -797,7 +803,7 @@ function render() {
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
         ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
       : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Waypoint type"><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint</option><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option></select>
-        ${repIn(s, idx)}${!isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}</div>`
+        ${repIn(s, idx)}${!isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}${ringsIn(s, idx)}</div>`
       : s.kind === "start" ? `<div class="ctl"><span class="sub">start</span><button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`
       : `<div class="ctl"><select class="field" data-halt="${idx}" aria-label="Finish or stop">${idx === st.length - 1 ? `<option value="end" ${s.kind === "end" ? "selected" : ""}>finish here</option>` : ""}<option value="stop" ${s.kind === "stop" ? "selected" : ""}>stop, then continue</option></select>${s.kind === "stop" ? `<input class="field" type="number" min="0" step="5" value="${Math.round((+s.dwell || 0) * 60)}" data-dwell="${idx}" aria-label="Minutes stopped" title="Minutes stopped${s.type === "ramp" ? " at the ramp (harbor transit in and out is added)" : ""}"><span class="sub">min</span>` : ""}<button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`;
     const leg = i > 0 ? P.legs[i - 1] : null;
@@ -811,6 +817,11 @@ function render() {
     if (s.kind !== "sample") { change(() => { s.dwell = m / 60; }); return; }
     const rep = Math.max(1, Math.round(m / S.samp.minPer));     // time on station and samples are tied: one sample = minutes per sample
     change(() => { s.rep = rep; s.dwell = rep * S.samp.minPer / 60; }, rep * S.samp.minPer !== m ? `${rep} sample${rep > 1 ? "s" : ""} = ${rep * S.samp.minPer} min (one sample takes ${S.samp.minPer} min).` : null); });
+  ol.querySelectorAll("[data-ringadd]").forEach(el => el.onclick = () => change(() => { const s = st[+el.dataset.ringadd], r = s.rings || []; s.rings = [...r, r.length ? r[r.length - 1] * 2 : 100]; }));
+  ol.querySelectorAll("[data-ring]").forEach(el => el.onchange = () => { const [i, k] = el.dataset.ring.split(":").map(Number), m = Math.round(+el.value);
+    change(() => { const s = st[i]; if (m > 0) s.rings[k] = m; s.rings.sort((a, b) => a - b); }); });
+  ol.querySelectorAll("[data-ringrm]").forEach(el => el.onclick = () => { const [i, k] = el.dataset.ringrm.split(":").map(Number);
+    change(() => { const s = st[i]; s.rings.splice(k, 1); if (!s.rings.length) delete s.rings; }); });
   ol.querySelectorAll("[data-prio]").forEach(el => el.onchange = () => change(() => { st[+el.dataset.prio].prio = el.value; }));
   ol.querySelectorAll("[data-rm]").forEach(el => el.onclick = () => { const s = st[+el.dataset.rm];
     // removing a sample stop also deletes its map site, unless another stop in this route or a saved route still visits it
@@ -1022,6 +1033,8 @@ function schematic(P) {
     g += `<circle cx="${x}" cy="${y}" r="${Math.max(1.5, 100 / 111195 / (b - a) * H)}" fill="#fecaca"/><path d="M${x} ${y - 6} L${x + 5.5} ${y + 4} L${x - 5.5} ${y + 4} Z" fill="#facc15" stroke="#111" stroke-width=".8"/><text x="${x + 7}" y="${y + 3}" font-size="9" fill="#374151">#${r.num}</text>`; });
   [P.harborOut, P.harborIn, ...P.harborMid.flatMap(m => [m.in, m.out])].forEach(h => { if (h) g += `<polyline points="${h.pts.map(p => `${X(p[1]).toFixed(1)},${Y(p[0]).toFixed(1)}`).join(" ")}" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-dasharray="4 3"/>`; });
   P.legs.forEach(l => g += `<polyline points="${l.pts.map(p => `${X(p[1]).toFixed(1)},${Y(p[0]).toFixed(1)}`).join(" ")}" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>`);
+  P.times.forEach(x => (x.s.rings || []).forEach(m => { const p = stopPos(x.s), ry = m / 111195 / (b - a) * H;
+    g += `<ellipse cx="${X(p[1])}" cy="${Y(p[0])}" rx="${ry}" ry="${ry}" fill="none" stroke="${x.s.kind === "sample" ? "#c026d3" : "#1d4ed8"}" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${X(p[1])}" y="${Y(p[0]) - ry - 2}" font-size="8" text-anchor="middle" fill="#111" stroke="#fff" stroke-width="2.4" paint-order="stroke">${m} m</text>`; }));
   let n = 0; const ids = sampleIds(); P.times.forEach(x => { const s = x.s, p = stopPos(s), xx = X(p[1]), yy = Y(p[0]);
     if (isMid(s)) { n++; const sm = s.kind === "sample", uw = isUW(s), id = ids.get(s);
       g += `<circle cx="${xx}" cy="${yy}" r="7.5" fill="${uw ? "#fff" : sm ? "#c026d3" : "#1d4ed8"}" stroke="${uw ? "#c026d3" : "#fff"}" stroke-width="${uw ? 2.2 : 1.5}"/><text x="${xx}" y="${yy + 3}" font-size="8.5" font-weight="700" fill="${uw ? "#86198f" : "#fff"}" text-anchor="middle">${n}</text>`;
@@ -1219,7 +1232,7 @@ function rows() {          // every point the navigator needs, in order: harbor 
       out.push({ name: rr.name, lat: rr.lat, lon: rr.lon, kind: "ramp_stop", dwell: +s.dwell || 0, eta: x.arr + (h ? h.in.h : 0), note: `stop at the ramp ${min} min (offload / crew change), then the operator drives back out` });
       if (h) harbor(h.out.pts, true);
       out.push({ name: `MISSION RESUME (outside harbor, ${nm})`, lat: pos[0], lon: pos[1], kind: "start", dwell: 0, eta: x.dep, note: "autonomous route continues" }); return; }
-    if (isPt) { out.push({ name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : stopName(s), lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
+    if (isPt) { out.push({ rings: s.rings, name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : stopName(s), lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
       note: !sid ? (+s.dwell ? `stop ${Math.round(s.dwell * 60)} min, then continue` : "drive through") : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)` }); return; }
     const name = r ? `${r.num} ${r.name}${r.live ? " LIVE" : ""}` : isRamp ? `${kind === "start" ? "MISSION START" : "MISSION END"} (outside harbor, ${D.ramps[s.ref].name.replace(/ (launch )?ramp$/i, "")})` : stopName(s);
     out.push({ name, lat: pos[0], lon: pos[1], kind, dwell: s.dwell || 0, eta: i ? x.arr : x.dep, rx: r, sid, rep: sid ? rep : "", smode: sid ? "on_station" : "",
@@ -1233,14 +1246,14 @@ const ACTION = r => ({ ramp: ["MANUAL", "HARBOR"], harbor: ["MANUAL", "HARBOR"],
 const q = s => `"${String(s).replace(/"/g, '""')}"`;
 function opTable() {          // operator waypoint table shared by the CSV, TSV and GeoJSON exports
   const R = rows(), O = S.ops; let cum = 0;
-  const head = ["wp", "name", "action", "wp_type", "lat_wgs84", "lon_wgs84", "lat_ddm", "lon_ddm", "loiter_min", "loiter_radius_m", "accept_radius_m", "speed_kn", "course_to_next_deg_true", "dist_to_next_m", "cum_dist_m", "eta_local_pacific", "receiver_num", "receiver_lat_wgs84", "receiver_lon_wgs84", "wp_to_receiver_m", "receiver_keepout_m", "next_leg_min_dist_to_any_receiver_m", "sample_id", "sample_mode", "n_samples", "note"];
+  const head = ["wp", "name", "action", "wp_type", "lat_wgs84", "lon_wgs84", "lat_ddm", "lon_ddm", "loiter_min", "loiter_radius_m", "accept_radius_m", "speed_kn", "course_to_next_deg_true", "dist_to_next_m", "cum_dist_m", "eta_local_pacific", "receiver_num", "receiver_lat_wgs84", "receiver_lon_wgs84", "wp_to_receiver_m", "receiver_keepout_m", "next_leg_min_dist_to_any_receiver_m", "sample_id", "sample_mode", "n_samples", "note", "radius_m"];
   const text = head.map(h => ["name", "lat_ddm", "lon_ddm", "eta_local_pacific", "note"].includes(h));
   const N = (v, d = 0) => (+v).toFixed(d);
   const out = R.map((r, i) => { const nx = R[i + 1], [act, typ] = ACTION(r), loit = act === "LOITER", dn = nx ? dist([r.lat, r.lon], [nx.lat, nx.lon]) : 0;
     const row = [i + 1, r.name, act, typ, N(r.lat, 6), N(r.lon, 6), ddm(r.lat, "N", "S"), ddm(r.lon, "E", "W"), loit ? Math.round(r.dwell * 60) : "", loit ? O.loiter : "", O.accept, typ === "HARBOR" ? Math.min(S.kn, 3) : S.kn,
       nx ? N(bearing([r.lat, r.lon], [nx.lat, nx.lon])) : "", nx ? N(dn) : "", N(cum), r.eta != null ? `${S.date} ${when(r.eta)}` : "",
       r.rx ? r.rx.num : "", r.rx ? N(r.rx.lat, 6) : "", r.rx ? N(r.rx.lon, 6) : "", r.rx ? N(dist([r.lat, r.lon], [r.rx.lat, r.rx.lon])) : "", r.rx ? KO(r.rx) : "",
-      nx && typ !== "HARBOR" && ACTION(nx)[1] !== "HARBOR" ? N(rxClearance([[r.lat, r.lon], [nx.lat, nx.lon]]).d) : "", r.sid || "", r.smode || "", r.rep ?? "", r.note || ""];
+      nx && typ !== "HARBOR" && ACTION(nx)[1] !== "HARBOR" ? N(rxClearance([[r.lat, r.lon], [nx.lat, nx.lon]]).d) : "", r.sid || "", r.smode || "", r.rep ?? "", r.note || "", (r.rings || []).join(";")];
     cum += dn; return row; });
   return { head, text, rows: out, R, total: cum };
 }
@@ -1248,11 +1261,11 @@ const exporters = {
   op: () => { const T = opTable(); dl(slug() + "_operator.csv", [T.head, ...T.rows.map(r => r.map((v, k) => T.text[k] && !(v === "" && T.head[k] === "eta_local_pacific") ? q(v) : v))].map(r => r.join(",")).join("\n") + "\n", "text/csv"); },
   geoclean: () => { const R = rows();      // waypoints only, in order: a waypoint or a loiter point
     dl(slug() + "_waypoints.geojson", JSON.stringify({ type: "FeatureCollection", features: R.map((r, i) => { const loit = ACTION(r)[0] === "LOITER";
-      return { type: "Feature", properties: { wp: i + 1, name: r.name, type: loit ? "loiter" : "waypoint", ...(loit ? { loiter_min: Math.round(r.dwell * 60), loiter_radius_m: +S.ops.loiter } : {}) },
+      return { type: "Feature", properties: { wp: i + 1, name: r.name, type: loit ? "loiter" : "waypoint", ...(loit ? { loiter_min: Math.round(r.dwell * 60), loiter_radius_m: +S.ops.loiter } : {}), ...(r.rings ? { radius_m: r.rings } : {}) },
         geometry: { type: "Point", coordinates: [+r.lon.toFixed(6), +r.lat.toFixed(6)] } }; }) }, null, 1) + "\n", "application/geo+json"); },
   tsv: () => { const T = opTable(), cl = v => String(v).replace(/[\t\r\n]+/g, " ");
     dl(slug() + "_operator.tsv", [T.head, ...T.rows].map(r => r.map(cl).join("\t")).join("\n") + "\n", "text/tab-separated-values"); },
-  geojson: () => { const T = opTable(), R = T.R, prop = r => Object.fromEntries(T.head.map((h, k) => [h, r[k] === "" ? null : T.text[k] || isNaN(r[k]) ? r[k] : +r[k]]));
+  geojson: () => { const T = opTable(), R = T.R, prop = r => Object.fromEntries(T.head.map((h, k) => [h, r[k] === "" ? null : h === "radius_m" ? r[k].split(";").map(Number) : T.text[k] || isNaN(r[k]) ? r[k] : +r[k]]));
     dl(slug() + "_operator.geojson", JSON.stringify({ type: "FeatureCollection", name: S.route.name || "route",
       properties: { route: S.route.name || "", date: S.date, speed_kn: S.kn, crs: "WGS84 (EPSG:4326), coordinates [lon, lat]", created_by: "Glider Mission Planner" },
       features: [{ type: "Feature", properties: { name: S.route.name || "route", kind: "route", n_waypoints: R.length, total_dist_m: +T.total.toFixed(0) }, geometry: { type: "LineString", coordinates: R.map(r => [+r.lon.toFixed(6), +r.lat.toFixed(6)]) } },
@@ -1287,7 +1300,7 @@ ${R.filter(r => r.kind !== "via").map(r => `<Placemark><name>${esc(r.name)}</nam
 const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
 function shareLink() { const pins = S.pins.filter(p => S.route.stops.some(s => s.type === "pin" && s.ref === p.id)), T = { rx: "x", ramp: "r", pin: "p" };
-  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.ref, s.kind === "sample" ? "s" : s.kind === "stop" ? "c" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1, s.mode === "underway" ? 1 : 0, s.series || ""]),
+  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.ref, s.kind === "sample" ? "s" : s.kind === "stop" ? "c" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1, s.mode === "underway" ? 1 : 0, s.series || "", ...(s.rings ? [s.rings] : [])]),
                  q: S.spots.filter(x => S.route.stops.some(s => s.type === "pt" && s.ref === x.id)).map(x => [x.id, x.lat, x.lon, x.series || ""]),
                  k: S.kn, v: D.rxVer, d: S.date, l: document.getElementById("launch").value, c: S.cur, p: pins.map(p => [p.id, p.name, p.lat, p.lon]) };
   return location.href.split("#")[0] + "#r=" + b64e(JSON.stringify(data)); }
@@ -1295,9 +1308,9 @@ function readLink() { const m = location.hash.match(/#r=([\w-]+)/); if (!m) retu
   try { const d = JSON.parse(b64d(m[1])), T = { x: "rx", r: "ramp", p: "pin" }, Pr = { h: "high", m: "med", l: "low" };
     (d.p || []).forEach(([id, name, lat, lon]) => { if (!S.pins.some(x => x.id === id)) S.pins.push({ id, name, lat, lon }); }); savePins();
     (d.q || []).forEach(([id, lat, lon, ser]) => { if (!S.spots.some(x => x.id === id)) S.spots.push({ id, lat, lon, ...(ser ? { series: ser } : {}) }); }); saveSpots();
-    const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser], i) => t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
+    const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser, rg], i) => (o => rg ? { ...o, rings: rg } : o)( t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
         : { type: "pt", ref, mode: uw ? "underway" : "station", ...(ser ? { series: ser } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 })
-      : { type: T[t], ref, dwell: dw, prio: Pr[pr], rep: rep || 1, kind: T[t] === "rx" ? (k === "s" ? "sample" : "pass") : i === 0 ? "start" : k === "c" ? "stop" : "end" });
+      : { type: T[t], ref, dwell: dw, prio: Pr[pr], rep: rep || 1, kind: T[t] === "rx" ? (k === "s" ? "sample" : "pass") : i === 0 ? "start" : k === "c" ? "stop" : "end" }));
     S.route = { id: null, name: d.n || "Shared route", stops: retime(migratePts(rxRenum({ stops: st, rxv: d.v }).stops)) };
     if (d.k) S.kn = d.k; if (d.d) S.date = d.d; if (d.l) { document.getElementById("launch").value = d.l; S.launch = (([h, mm]) => h + mm / 60)(d.l.split(":").map(Number)); } if (d.c) S.cur = d.c;
     toast(`Opened shared route "${S.route.name}". Save it to keep it.`); dirty(); } catch (e) { toast("That link does not contain a readable route."); }
