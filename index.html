@@ -137,6 +137,9 @@ details.grp[open] > summary { border-bottom:1px solid var(--line); } details.grp
 .leaflet-bar { border:1px solid var(--line) !important; }
 .leaflet-control-attribution { background:var(--glass) !important; color:var(--muted) !important; } .leaflet-control-attribution a { color:var(--muted) !important; }
 .leaflet-control-scale-line { background:var(--glass); color:var(--ink); border-color:var(--muted); }
+.coordbox { background:var(--glass); color:var(--ink); border:1px solid var(--line); border-radius:7px; padding:3px 8px; font:500 11.5px 'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; white-space:pre; pointer-events:none; } .coordbox:empty { display:none; }
+.llpop .leaflet-popup-content { margin:10px 12px; font:500 12.5px/1.5 'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; } .llpop .small { font:400 11px Inter; color:#64748b; }
+.llpop .cp { margin-top:6px; display:flex; gap:6px; } .llpop button { font:600 11px Inter; padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#f8fafc; color:#0f172a; cursor:pointer; }
 .leaflet-bottom.leaflet-right { bottom:70px; } .leaflet-top.leaflet-left { top:auto; bottom:260px; }
 .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); color:var(--ink); padding:9px 14px; border-radius:10px; box-shadow:var(--shadow); font-size:13px; z-index:3000; max-width:80vw; }
 /* modals */
@@ -754,7 +757,7 @@ function render() {
   drawStatic(); drawRoute(P); drawTrack();
   document.getElementById("banner").innerHTML = S.mode === "pin" ? "Click the map to drop a launch / pickup pin. Click a pin to delete it; drag to move."
     : S.mode === "sample" ? (!st.length ? "Click the water to drop waypoints. Then click a ramp in <b>Build route</b> to start, and click waypoints and receivers in order." : st[st.length - 1].kind !== "end" ? "Click the water: the new waypoint becomes the next stop. Click an existing waypoint to visit it." : "Click the water: the new waypoint joins the nearest leg (driven through; set a stop or sample in the stop list). Click an existing waypoint to add it before the finish.") + " Click a receiver or buoy to put a waypoint right on it."
-    : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route."
+    : S.mode === "pan" ? "Pan and zoom. Clicks do not change the route: click or tap any spot to get its lat/lon to copy. Zoom in for more precision."
     : st.length && st[0].kind !== "start" ? "The route has no start: click a ramp or pin to set one."
     : !st.length ? "<b>1.</b> Click a green ramp to set the start."
     : st[st.length - 1].kind !== "end" ? "<b>2.</b> Click receivers and waypoints in the order to visit them (or add waypoints with <b>Waypoint</b>), then a ramp to finish."
@@ -1319,7 +1322,7 @@ function layersUI() { const el = document.getElementById("layers");
   if (!layersUI.done && window.innerWidth < 900) el.classList.add("collapsed"); layersUI.done = true; }
 
 // ---------- wiring ----------
-map.on("click", e => { if (S.mode === "sample") { addPt(e.latlng.lat, e.latlng.lng); return; } if (S.mode !== "pin") return;
+map.on("click", e => { if (S.mode === "sample") { addPt(e.latlng.lat, e.latlng.lng); return; } if (S.mode === "pan") { coordPopup(e.latlng); return; } if (S.mode !== "pin") return;
   const p = { id: "p" + Date.now().toString(36), name: `Pin ${S.pins.length + 1}`, lat: +e.latlng.lat.toFixed(6), lon: +e.latlng.lng.toFixed(6) };
   S.pins.push(p); savePins(); render(); toast(`${p.name} at ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}. Rename it in the panel; switch to Build route to use it.`); });
 map.on("zoomend", () => { drawStatic(); if (PLAN) drawRoute(PLAN); });
@@ -1364,6 +1367,16 @@ playBtn.onclick = () => { if (timer) { clearInterval(timer); timer = null; playB
 document.getElementById("theme").onclick = () => { const h = document.documentElement; h.dataset.theme = h.dataset.theme === "dark" ? "light" : "dark";
   render(); };
 L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
+// pointer position readout; in Pan mode a click pins it in a popup to copy. Precision is limited by the screen: one pixel = pxM() metres
+const pxM = () => 40075016.7 * Math.cos(toRad(map.getCenter().lat)) / 2 ** (map.getZoom() + 8);
+const llTxt = ll => [`${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`, `${ddm(ll.lat, "N", "S")}  ${ddm(ll.lng, "E", "W")}`];
+const coordBox = new (L.Control.extend({ onAdd: () => L.DomUtil.create("div", "coordbox") }))({ position: "bottomright" }).addTo(map).getContainer();
+map.on("mousemove", e => { const ll = e.latlng; coordBox.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)} · ${ddm(ll.lat, "N", "S")} ${ddm(ll.lng, "E", "W")} · ±${Math.max(1, Math.round(pxM()))} m`; });
+map.on("mouseout", () => { coordBox.textContent = ""; });
+function coordPopup(ll) { const [dec, dm] = llTxt(ll), px = Math.max(1, Math.round(pxM()));
+  L.popup({ className: "llpop" }).setLatLng(ll).setContent(`<b>${dec}</b><br>${dm}<div class="small">WGS84 &middot; &plusmn;${px} m at this zoom${px > 5 ? " (zoom in for more precision)" : ""}</div><div class="cp"><button data-cp="${dec}">Copy decimal</button><button data-cp="${dm}">Copy DDM</button></div>`).openOn(map); }
+map.on("popupopen", e => e.popup.getElement().querySelectorAll("[data-cp]").forEach(b => b.onclick = () => {
+  const t = b.dataset.cp; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(`Copied ${t}`), () => toast(t)); }));
 settingsUI(); buildFree(); layersUI(); setBase("ocean"); readLink(); dateEl.value = S.date; loadTeam();
 (async () => { if (S.cur === "live") await ensureWx(S.date); render(); })();
 </script></body></html>
