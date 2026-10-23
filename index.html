@@ -494,6 +494,10 @@ function ptWarn(lat, lon, self) { const w = []; if (inKelp(lat, lon)) w.push("in
 function spotOf(s) { return s.ref ? S.spots.find(x => x.id === s.ref) : s.lat != null ? s : null; }
 const saveSpots = () => store.set("rc_spots", S.spots);
 function newSpot(lat, lon, o = {}) { const sp = { id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), lat: +lat.toFixed(6), lon: +lon.toFixed(6), ...o }; S.spots.push(sp); saveSpots(); return sp.id; }
+// samples at a stop: the base set (rep x minutes per sample) plus optional extra sets s.sets = [[n, min], ...] with their own minutes per sample
+const nSamp = s => (+s.rep || 1) + (s.sets || []).reduce((a, [n]) => a + n, 0);
+const setsMin = s => (s.sets || []).reduce((a, [n, m]) => a + n * m, 0), sampMin = s => (+s.rep || 1) * S.samp.minPer + setsMin(s);
+const sampDesc = (s, x = "×") => [`${+s.rep || 1} ${x} ${S.samp.minPer} min`, ...(s.sets || []).map(([n, m]) => `${n} ${x} ${m} min`)].join(" + ");
 const newPt = (ref, o = {}) => ({ type: "pt", ref, kind: "sample", mode: "station", rep: S.samp.reps, dwell: S.samp.reps * S.samp.minPer / 60, prio: "high", ...o });
 function migratePts(stops) { stops.forEach(s => { if (s.type === "pt" && !s.ref && s.lat != null) { s.ref = newSpot(s.lat, s.lon, s.series ? { series: s.series } : {}); delete s.lat; delete s.lon; } }); return stops; }
 function addPtStop(id) { const st = S.route.stops;   // like clicking a receiver: next stop, before the finish
@@ -607,7 +611,7 @@ function compute(o = {}) {
     if (s.kind === "stop") { const hi = harborPath(s, false), ho = harborPath(s, true);      // mid-route ramp: operator drives in, stops, drives back out
       if (hi) { halt = { in: { pts: hi, km: plen(hi) / 1000, h: plen(hi) / 1000 / hv }, out: { pts: ho, km: plen(ho) / 1000, h: plen(ho) / 1000 / hv } }; dwell += halt.in.h + halt.out.h; P.harborMid.push(halt); } }
     t += dwell;
-    if (isUW(s)) P.uw.push([arr, arr + (+s.rep || 1) * S.samp.minPer / 60, s]);      // sampler runs while the vessel keeps going
+    if (isUW(s)) P.uw.push([arr, arr + sampMin(s) / 60, s]);      // sampler runs while the vessel keeps going
     P.times.push({ s, arr, dep: t, dwell, leg: r.h, halt });
   });
   P.missionEnd = t; if (P.harborIn) t += P.harborIn.h;
@@ -652,9 +656,9 @@ function checks(P) {
   if (P.energy.minSoc < 0.2) add(P.energy.minSoc <= 0 ? 2 : 1, `Battery drops to ${(Math.max(0, P.energy.minSoc) * 100).toFixed(0)} %.`);
   if (P.kelpKm > 0.05) add(1, `${P.kelpKm.toFixed(1)} km of the route crosses mapped kelp.`);
   o.stops.forEach(s => { const p = s.type === "pt" && stopPos(s); if (p && inKelp(...p)) add(1, `${stopName(s)} is in mapped kelp.`); });
-  const sm = o.stops.filter(s => isMid(s) && s.kind === "sample"), reps = sm.reduce((a, s) => a + (+s.rep || 1), 0), need = reps + (+S.samp.blanks || 0);
+  const sm = o.stops.filter(s => isMid(s) && s.kind === "sample"), reps = sm.reduce((a, s) => a + nSamp(s), 0), need = reps + (+S.samp.blanks || 0);
   P.sampling = { stops: sm.length, reps, need };
-  for (let k = 1; k < P.uw.length; k++) if (P.uw[k][0] < P.uw[k - 1][1] - 1e-6) { add(1, `Under-way samples overlap: ${stopName(P.uw[k - 1][2])} is still running (${Math.round(S.samp.minPer * (+P.uw[k - 1][2].rep || 1))} min) when ${stopName(P.uw[k][2])} starts. Space them further apart or shorten the sample time.`); break; }
+  for (let k = 1; k < P.uw.length; k++) if (P.uw[k][0] < P.uw[k - 1][1] - 1e-6) { add(1, `Under-way samples overlap: ${stopName(P.uw[k - 1][2])} is still running (${Math.round(sampMin(P.uw[k - 1][2]))} min) when ${stopName(P.uw[k][2])} starts. Space them further apart or shorten the sample time.`); break; }
   if (S.samp.cap > 0 && need > S.samp.cap) add(1, `The plan needs ${need} cartridges (${reps} samples + ${+S.samp.blanks || 0} blanks); ${S.samp.cap} on board.`);
   const lastS = o.stops[o.stops.length - 1]; if (lastS && lastS.kind !== "end") add(1, "No finish site yet: click a ramp or pin to end the route.");
   return { level, out };
@@ -793,7 +797,8 @@ function render() {
   const ss = document.getElementById("sampSum"), used = P.sampling ? P.sampling.need : 0;
   ss.innerHTML = `1 sample = <b>${S.samp.minPer} min</b> &middot; ${S.samp.reps} per new sampling stop &middot; ${S.samp.cap ? `${used} of ${S.samp.cap} cartridges` : "cartridges not checked"} &middot; <button class="linkbtn" id="sampOpen">change under Sampling</button>`;
   document.getElementById("sampOpen").onclick = () => { const g = document.getElementById("sampGrp"); g.open = true; g.scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("spMin").focus({ preventScroll: true }); };
-  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop"><span class="sub">${isUW(s) ? `samples &asymp; ${Math.round((+s.rep || 1) * S.samp.minPer)} min while moving` : `samples &times; ${S.samp.minPer} min =`}</span>` : "";
+  const repIn = (s, idx) => s.kind === "sample" ? `<input class="field" type="number" min="1" max="50" step="1" value="${+s.rep || 1}" data-rep="${idx}" style="width:48px" aria-label="Samples at this stop" title="Samples (cartridges) taken at this stop"><span class="sub">${isUW(s) ? `samples &times; ${S.samp.minPer} min${s.sets ? " + sets below" : ""}, &asymp; ${Math.round(sampMin(s))} min while moving` : `samples &times; ${S.samp.minPer} min${s.sets ? " + sets below" : ""} =`}</span>` : "";
+  const setsIn = (s, idx) => s.kind !== "sample" ? "" : `<div class="rings">${(s.sets || []).map(([n, m], k) => `<span>+ <input class="field" type="number" min="1" max="50" step="1" value="${n}" data-setn="${idx}:${k}" style="width:48px" aria-label="Samples in set ${k + 2}"> samples &times; <input class="field" type="number" min="1" step="1" value="${m}" data-setm="${idx}:${k}" style="width:56px" aria-label="Minutes per sample in set ${k + 2}"> min <button class="mini" style="display:inline-grid;width:20px;height:20px" data-setrm="${idx}:${k}" title="Remove this set">&times;</button></span>`).join("")}${(s.sets || []).length < 4 ? `<button class="linkbtn" data-setadd="${idx}" title="Add more samples at this stop that take a different time each">+ samples at other minutes</button>` : ""}</div>`;
   const ringsIn = (s, idx) => `<div class="rings">${(s.rings || []).map((m, k) => `<span>radius ${k + 1} <input class="field" type="number" min="1" step="10" value="${m}" data-ring="${idx}:${k}" aria-label="Radius ${k + 1} in metres"> m <button class="mini" style="display:inline-grid;width:20px;height:20px" data-ringrm="${idx}:${k}" title="Remove this radius">&times;</button></span>`).join("")}${(s.rings || []).length < 4 ? `<button class="linkbtn" data-ringadd="${idx}" title="Draw a circle of a set radius around this waypoint">+ radius</button>` : ""}</div>`;
   const minIn = (s, idx) => `<input class="field" type="number" min="0" step="${s.kind === "sample" ? S.samp.minPer : 5}" value="${Math.round(s.dwell * 60)}" data-dwell="${idx}" aria-label="Minutes at stop" title="${s.kind === "sample" ? "Minutes on station; changes the number of samples (one sample = " + S.samp.minPer + " min)" : "Minutes at this stop"}"><span class="sub">min</span>`;
   ol.innerHTML = P.times.map((x, i) => {
@@ -801,9 +806,9 @@ function render() {
     const dot = isRx ? `<div class="dot ${s.kind === "sample" ? "sample" : ""}">${n}</div>` : isPt ? `<div class="dot pt ${s.kind !== "sample" ? "wp" : s.mode === "underway" ? "uw" : ""}">${n}</div>` : `<div class="dot ${s.type === "ramp" ? "ramp" : "pin"}">${s.type === "ramp" ? "R" : "P"}</div>`;
     const pos = stopPos(s), r = isRx ? RX[s.ref] : null;
     const ctl = isRx ? `<div class="ctl"><select class="field" data-kind="${idx}" aria-label="Stop type"><option value="pass" ${s.kind === "pass" ? "selected" : ""}>pass</option><option value="sample" ${s.kind === "sample" ? "selected" : ""}>sample</option></select>
-        ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}</div>`
+        ${repIn(s, idx)}${minIn(s, idx)}${prioSel(s, idx)}${moveBtns(idx)}${setsIn(s, idx)}</div>`
       : isPt ? `<div class="ctl"><select class="field" data-pkind="${idx}" aria-label="Waypoint type"><option value="pass" ${s.kind !== "sample" ? "selected" : ""}>waypoint</option><option value="station" ${s.kind === "sample" && s.mode !== "underway" ? "selected" : ""}>sample on station</option><option value="underway" ${isUW(s) ? "selected" : ""}>sample under way</option></select>
-        ${repIn(s, idx)}${!isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}${ringsIn(s, idx)}</div>`
+        ${repIn(s, idx)}${!isUW(s) ? minIn(s, idx) : ""}${prioSel(s, idx)}${moveBtns(idx)}${setsIn(s, idx)}${ringsIn(s, idx)}</div>`
       : s.kind === "start" ? `<div class="ctl"><span class="sub">start</span><button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`
       : `<div class="ctl"><select class="field" data-halt="${idx}" aria-label="Finish or stop">${idx === st.length - 1 ? `<option value="end" ${s.kind === "end" ? "selected" : ""}>finish here</option>` : ""}<option value="stop" ${s.kind === "stop" ? "selected" : ""}>stop, then continue</option></select>${s.kind === "stop" ? `<input class="field" type="number" min="0" step="5" value="${Math.round((+s.dwell || 0) * 60)}" data-dwell="${idx}" aria-label="Minutes stopped" title="Minutes stopped${s.type === "ramp" ? " at the ramp (harbor transit in and out is added)" : ""}"><span class="sub">min</span>` : ""}<button class="mini" data-rm="${idx}" title="Remove">&times;</button></div>`;
     const leg = i > 0 ? P.legs[i - 1] : null;
@@ -812,11 +817,16 @@ function render() {
     const lm = leg ? `<div class="legmeta">&darr; <button class="linkbtn" data-ser="${i}" title="Add sample stops along this leg (default: one, halfway)">+ samples</button> &middot; ${leg.km.toFixed(1)} km &middot; ${leg.h.toFixed(1)} h &middot; course ${bearing(leg.pts[0], leg.pts[1] || leg.pts[0]).toFixed(0)}&deg;${leg.pts.length > 2 ? ` &middot; ${leg.pts.length - 2} bends` : ""}${leg.kelpM > 50 ? ` &middot; <span class="k">${(leg.kelpM / 1000).toFixed(1)} km kelp</span>` : ""}${leg.ok ? "" : ' &middot; <span class="w">no water path found</span>'}</div>${S.serLeg === i ? `<div class="serform"><select class="field" id="serBy"><option value="n">N evenly spaced</option><option value="km">every km</option><option value="min">every min</option></select><input class="field" type="number" id="serV" value="1" min="0.1" step="any" aria-label="Number or spacing"><select class="field" id="serMode"><option value="station">on station</option><option value="underway">under way</option></select><button class="btn primary" id="serGo">Add</button><button class="mini" id="serX" title="Cancel">&times;</button></div>` : ""}` : "";
     return lm + `<li>${dot}<div style="min-width:0"><div class="nm">${isRx && ids.get(s) ? `<span class="sid">${ids.get(s)}</span>` : ""}${esc(stopName(s))}</div><div class="sub">${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}${isRx ? ` &middot; ${SO(r)} m ${r.sbrg}&deg; off` : isPt ? `${isUW(s) ? ` &middot; sampler on here for ~${Math.round((+s.rep || 1) * S.samp.minPer)} min, no stop` : ""}${inKelp(...pos) ? ' &middot; <span style="color:var(--amber)">in kelp</span>' : ""}${s.series ? ` &middot; series <button class="linkbtn" data-rmser="${s.series}">remove series</button>` : ""}` : s.type === "ramp" ? ` &middot; ${s.kind === "start" ? "mission start outside the harbor" : s.kind === "stop" ? "operator drives in, stops at the ramp, drives back out" : "mission end outside the harbor"} (dashed: operator drives the harbor)` : ""}</div>${ctl}</div><div class="time">${t}</div></li>`;
   }).join("");
-  ol.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.kind]; s.kind = el.value; if (el.value === "sample") s.rep = +s.rep > 1 ? +s.rep : S.samp.reps; s.dwell = el.value === "sample" ? s.rep * S.samp.minPer / 60 : S.passDefault() / 60; if (el.value === "sample" && (s.prio || "med") === "med") s.prio = "high"; }));
+  ol.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.kind]; s.kind = el.value; if (el.value === "sample") s.rep = +s.rep > 1 ? +s.rep : S.samp.reps; s.dwell = el.value === "sample" ? sampMin(s) / 60 : S.passDefault() / 60; if (el.value === "sample" && (s.prio || "med") === "med") s.prio = "high"; }));
   ol.querySelectorAll("[data-dwell]").forEach(el => el.onchange = () => { const s = st[+el.dataset.dwell], m = Math.max(0, +el.value);
     if (s.kind !== "sample") { change(() => { s.dwell = m / 60; }); return; }
-    const rep = Math.max(1, Math.round(m / S.samp.minPer));     // time on station and samples are tied: one sample = minutes per sample
-    change(() => { s.rep = rep; s.dwell = rep * S.samp.minPer / 60; }, rep * S.samp.minPer !== m ? `${rep} sample${rep > 1 ? "s" : ""} = ${rep * S.samp.minPer} min (one sample takes ${S.samp.minPer} min).` : null); });
+    const ex = setsMin(s), rep = Math.max(1, Math.round((m - ex) / S.samp.minPer));     // time on station and samples are tied: the total sets the base set; extra sets keep their own minutes
+    change(() => { s.rep = rep; s.dwell = sampMin(s) / 60; }, rep * S.samp.minPer + ex !== m ? `${sampDesc({ ...s, rep })} = ${rep * S.samp.minPer + ex} min.` : null); });
+  ol.querySelectorAll("[data-setadd]").forEach(el => el.onclick = () => change(() => { const s = st[+el.dataset.setadd]; s.sets = [...(s.sets || []), [1, S.samp.minPer]]; if (!isUW(s)) s.dwell = sampMin(s) / 60; }));
+  ol.querySelectorAll("[data-setn], [data-setm]").forEach(el => el.onchange = () => { const nIn = el.dataset.setn != null, [i, k] = (nIn ? el.dataset.setn : el.dataset.setm).split(":").map(Number), v = Math.round(+el.value);
+    change(() => { const s = st[i]; if (v > 0) s.sets[k][nIn ? 0 : 1] = v; if (!isUW(s)) s.dwell = sampMin(s) / 60; }); });
+  ol.querySelectorAll("[data-setrm]").forEach(el => el.onclick = () => { const [i, k] = el.dataset.setrm.split(":").map(Number);
+    change(() => { const s = st[i]; s.sets.splice(k, 1); if (!s.sets.length) delete s.sets; if (!isUW(s)) s.dwell = sampMin(s) / 60; }); });
   ol.querySelectorAll("[data-ringadd]").forEach(el => el.onclick = () => change(() => { const s = st[+el.dataset.ringadd], r = s.rings || []; s.rings = [...r, r.length ? r[r.length - 1] * 2 : 100]; }));
   ol.querySelectorAll("[data-ring]").forEach(el => el.onchange = () => { const [i, k] = el.dataset.ring.split(":").map(Number), m = Math.round(+el.value);
     change(() => { const s = st[i]; if (m > 0) s.rings[k] = m; s.rings.sort((a, b) => a - b); }); });
@@ -831,8 +841,8 @@ function render() {
   ol.querySelectorAll("[data-halt]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.halt]; s.kind = el.value; if (el.value === "stop" && !(+s.dwell > 0)) s.dwell = 0.5; },
     el.value === "stop" ? "Stop set. Keep clicking receivers or waypoints, then a ramp to finish." : "Finish set."));
   ol.querySelectorAll("[data-pkind]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.pkind];
-    if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? s.rep * S.samp.minPer / 60 : 0; } }));
-  ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = s.rep * S.samp.minPer / 60; }));
+    if (el.value === "pass") { s.kind = "pass"; s.dwell = 0; } else { s.kind = "sample"; s.mode = el.value; s.rep = +s.rep || S.samp.reps; s.dwell = el.value === "station" ? sampMin(s) / 60 : 0; } }));
+  ol.querySelectorAll("[data-rep]").forEach(el => el.onchange = () => change(() => { const s = st[+el.dataset.rep]; s.rep = Math.max(1, Math.round(+el.value) || 1); if (!isUW(s)) s.dwell = sampMin(s) / 60; }));
   ol.querySelectorAll("[data-rmser]").forEach(el => el.onclick = () => { const tag = el.dataset.rmser; change(() => { S.route.stops = st.filter(s => s.series !== tag); }, "Series removed.");
     S.spots = S.spots.filter(x => x.series !== tag || S.route.stops.some(s => s.ref === x.id)); saveSpots(); render(); });
   ol.querySelectorAll("[data-ser]").forEach(el => el.onclick = () => { S.serLeg = S.serLeg === +el.dataset.ser ? null : +el.dataset.ser; render(); });
@@ -968,7 +978,7 @@ function shareTeam(r) {
   if (url.length < 7800) { window.open(url, "_blank", "noopener"); toast("GitHub opened with the route filled in: press Commit changes. It shows under Team routes for everyone within a few minutes."); }
   else { dl(fname, body, "application/json"); window.open(`https://github.com/${TEAM.repo}/upload/${TEAM.branch}/${TEAM.dir}`, "_blank", "noopener"); toast("Route file downloaded (too long for a link): drag it onto the GitHub upload page that just opened and press Commit changes."); }
 }
-const retime = stops => { stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = (+x.rep || 1) * S.samp.minPer / 60; }); return stops; };   // time on station follows minutes per sample
+const retime = stops => { stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = sampMin(x) / 60; }); return stops; };   // time on station follows minutes per sample
 function loadRoute(r) { r = rxRenum(r); S.route = { id: r.id ?? null, name: r.name || "", stops: retime(migratePts(JSON.parse(JSON.stringify(r.stops || [])))) }; S.history = [];
   if (r.date) { S.date = r.date; document.getElementById("date").value = r.date; }      // the saved mission day, speed, launch time and current mode come back with the route
   if (r.cur) { S.cur = r.cur; if (S.cur === "live") ensureWx(S.date).then(() => render()).catch(() => {}); }
@@ -1080,12 +1090,12 @@ function planSheet() {
   const dur = h => { const m = Math.round(h * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`; };
   const short = n => n.replace(/ (launch )?ramp$/i, "");
   let n = 0; const ids = sampleIds();
-  const what = s => { const rep = +s.rep || 1, min = Math.round((+s.dwell || 0) * 60), math = `${rep} sample${rep > 1 ? "s" : ""} &times; ${S.samp.minPer} min`;
+  const what = s => { const rep = nSamp(s), min = Math.round((+s.dwell || 0) * 60), math = s.sets ? `${rep} samples: ${sampDesc(s, "&times;")}` : `${rep} sample${rep > 1 ? "s" : ""} &times; ${S.samp.minPer} min`;
     if (s.kind === "start") return P.harborOut ? "Launch; the operator drives out of the harbor" : "Launch";
     if (s.kind === "end") return P.harborIn ? "Operator drives into the harbor; recover" : "Recover";
     if (s.kind === "stop") return s.type === "ramp" ? `<b>Ramp stop: ${dur(+s.dwell || 0)}</b><br>operator drives in, stops, drives back out` : `<b>Stop ${dur(+s.dwell || 0)}</b>, then continue`;
     if (isUW(s)) return `<b>Sample ${ids.get(s)} while moving</b><br>${math}, no stop`;
-    if (s.kind === "sample") return `<b>Sample ${ids.get(s)}: stop ${dur(min / 60)}</b><br>${rep * S.samp.minPer === min ? math : `${rep} sample${rep > 1 ? "s" : ""}`}`;
+    if (s.kind === "sample") return `<b>Sample ${ids.get(s)}: stop ${dur(min / 60)}</b><br>${Math.round(sampMin(s)) === min ? math : `${rep} sample${rep > 1 ? "s" : ""}`}`;
     if (s.type === "pt") return "Waypoint: go through";
     return min ? `Pass; stop ${min} min` : "Pass"; };
   const stopRows = P.times.map((x, i) => { const s = x.s, p = stopPos(s), leg = i ? P.legs[i - 1] : null, mid = isMid(s); if (mid) n++;
@@ -1222,7 +1232,7 @@ function rows() {          // every point the navigator needs, in order: harbor 
     if (i > 0) { const pts = P.legs[i - 1].pts; for (let k = 1; k < pts.length; k++) { fill(pts[k - 1], pts[k]);
       if (k < pts.length - 1) out.push({ name: `turn ${++turn}`, lat: pts[k][0], lon: pts[k][1], kind: "via", dwell: 0, eta: null, note: "route turn (around land / shallows / keep-out)" }); } }
     const s = x.s, pos = stopPos(s), r = s.type === "rx" ? RX[s.ref] : null, isRamp = s.type === "ramp";
-    const isPt = s.type === "pt", sid = ids.get(s) || "", rep = +s.rep || 1;
+    const isPt = s.type === "pt", sid = ids.get(s) || "", rep = nSamp(s), sd = s.sets ? ` (${sampDesc(s, "x")})` : "";
     const kind = s.kind === "start" ? "start" : s.kind === "end" ? "end" : isPt ? (s.kind !== "sample" ? "wp" : isUW(s) ? "sample_uw" : "sample_st") : s.kind === "sample" ? "station" : "pass";
     if (s.kind === "stop") { const min = Math.round((+s.dwell || 0) * 60);
       if (!isRamp) { out.push({ name: stopName(s), lat: pos[0], lon: pos[1], kind: "pin_stop", dwell: +s.dwell || 0, eta: x.arr, note: `stop ${min} min, then continue` }); return; }
@@ -1233,10 +1243,10 @@ function rows() {          // every point the navigator needs, in order: harbor 
       if (h) harbor(h.out.pts, true);
       out.push({ name: `MISSION RESUME (outside harbor, ${nm})`, lat: pos[0], lon: pos[1], kind: "start", dwell: 0, eta: x.dep, note: "autonomous route continues" }); return; }
     if (isPt) { out.push({ rings: s.rings, name: sid ? `${sid} eDNA sample${isUW(s) ? " (under way)" : ""}` : stopName(s), lat: pos[0], lon: pos[1], kind, dwell: isUW(s) ? 0 : +s.dwell || 0, eta: x.arr, sid, rep: sid ? rep : "", smode: sid ? (isUW(s) ? "underway" : "on_station") : "",
-      note: !sid ? (+s.dwell ? `stop ${Math.round(s.dwell * 60)} min, then continue` : "drive through") : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s), about ${Math.round(rep * S.samp.minPer)} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)` }); return; }
+      note: !sid ? (+s.dwell ? `stop ${Math.round(s.dwell * 60)} min, then continue` : "drive through") : isUW(s) ? `eDNA sample ${sid}: start the sampler at this waypoint and keep going; ${rep} sample(s)${sd}, about ${Math.round(sampMin(s))} min` : `eDNA sample ${sid}: hold within ${S.ops.loiter} m for ${Math.round(s.dwell * 60)} min; ${rep} sample(s)${sd}` }); return; }
     const name = r ? `${r.num} ${r.name}${r.live ? " LIVE" : ""}` : isRamp ? `${kind === "start" ? "MISSION START" : "MISSION END"} (outside harbor, ${D.ramps[s.ref].name.replace(/ (launch )?ramp$/i, "")})` : stopName(s);
     out.push({ name, lat: pos[0], lon: pos[1], kind, dwell: s.dwell || 0, eta: i ? x.arr : x.dep, rx: r, sid, rep: sid ? rep : "", smode: sid ? "on_station" : "",
-      note: r ? `${sid ? `eDNA sample ${sid}, ${rep} sample(s); ` : ""}${r.ext ? `${r.owner} surface buoy, not ours; ` : ""}stand-off ${SO(r)} m from ${r.ext ? "buoy" : "receiver"} at ${r.sbrg} deg; ${r.ext ? "buoy" : "receiver"} ${r.lat.toFixed(5)},${r.lon.toFixed(5)}; keep-out ${KO(r)} m` : isRamp ? "autonomous route starts / ends here" : "" });
+      note: r ? `${sid ? `eDNA sample ${sid}, ${rep} sample(s)${sd}; ` : ""}${r.ext ? `${r.owner} surface buoy, not ours; ` : ""}stand-off ${SO(r)} m from ${r.ext ? "buoy" : "receiver"} at ${r.sbrg} deg; ${r.ext ? "buoy" : "receiver"} ${r.lat.toFixed(5)},${r.lon.toFixed(5)}; keep-out ${KO(r)} m` : isRamp ? "autonomous route starts / ends here" : "" });
   });
   if (P.harborIn && en.kind === "end") { const r = D.ramps[en.ref]; harbor(P.harborIn.pts, false); out.push({ name: r.name, lat: r.lat, lon: r.lon, kind: "ramp_end", dwell: 0, eta: P.end, note: "recover at ramp" }); }
   return out;
@@ -1300,7 +1310,7 @@ ${R.filter(r => r.kind !== "via").map(r => `<Placemark><name>${esc(r.name)}</nam
 const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))));
 function shareLink() { const pins = S.pins.filter(p => S.route.stops.some(s => s.type === "pin" && s.ref === p.id)), T = { rx: "x", ramp: "r", pin: "p" };
-  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.ref, s.kind === "sample" ? "s" : s.kind === "stop" ? "c" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1, s.mode === "underway" ? 1 : 0, s.series || "", ...(s.rings ? [s.rings] : [])]),
+  const data = { n: S.route.name, s: S.route.stops.map(s => [T[s.type] || "t", s.ref, s.kind === "sample" ? "s" : s.kind === "stop" ? "c" : "p", +(+s.dwell || 0).toFixed(3), (s.prio || "med")[0], +s.rep || 1, s.mode === "underway" ? 1 : 0, s.series || "", ...(s.rings || s.sets ? [s.rings || 0] : []), ...(s.sets ? [s.sets] : [])]),
                  q: S.spots.filter(x => S.route.stops.some(s => s.type === "pt" && s.ref === x.id)).map(x => [x.id, x.lat, x.lon, x.series || ""]),
                  k: S.kn, v: D.rxVer, d: S.date, l: document.getElementById("launch").value, c: S.cur, p: pins.map(p => [p.id, p.name, p.lat, p.lon]) };
   return location.href.split("#")[0] + "#r=" + b64e(JSON.stringify(data)); }
@@ -1308,7 +1318,7 @@ function readLink() { const m = location.hash.match(/#r=([\w-]+)/); if (!m) retu
   try { const d = JSON.parse(b64d(m[1])), T = { x: "rx", r: "ramp", p: "pin" }, Pr = { h: "high", m: "med", l: "low" };
     (d.p || []).forEach(([id, name, lat, lon]) => { if (!S.pins.some(x => x.id === id)) S.pins.push({ id, name, lat, lon }); }); savePins();
     (d.q || []).forEach(([id, lat, lon, ser]) => { if (!S.spots.some(x => x.id === id)) S.spots.push({ id, lat, lon, ...(ser ? { series: ser } : {}) }); }); saveSpots();
-    const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser, rg], i) => (o => rg ? { ...o, rings: rg } : o)( t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
+    const st = d.s.map(([t, ref, k, dw, pr, rep, uw, ser, rg, sets], i) => (o => ({ ...o, ...(rg ? { rings: rg } : {}), ...(sets ? { sets } : {}) }))( t === "t" ? (Array.isArray(ref) ? { type: "pt", lat: ref[0], lon: ref[1], mode: ref[2] ? "underway" : "station", ...(ref[3] ? { series: ref[3] } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 }
         : { type: "pt", ref, mode: uw ? "underway" : "station", ...(ser ? { series: ser } : {}), kind: k === "s" ? "sample" : "pass", dwell: dw, prio: Pr[pr], rep: rep || 1 })
       : { type: T[t], ref, dwell: dw, prio: Pr[pr], rep: rep || 1, kind: T[t] === "rx" ? (k === "s" ? "sample" : "pass") : i === 0 ? "start" : k === "c" ? "stop" : "end" }));
     S.route = { id: null, name: d.n || "Shared route", stops: retime(migratePts(rxRenum({ stops: st, rxv: d.v }).stops)) };
@@ -1323,7 +1333,7 @@ const SETTINGS = [["limWind", "limits", "wind"], ["limGust", "limits", "gust"], 
 function settingsUI() { SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id); if (el.type === "checkbox") el.checked = !!S[g][k]; else el.value = S[g][k]; }); }
 SETTINGS.forEach(([id, g, k]) => { const el = document.getElementById(id);
   el.onchange = () => { S[g][k] = el.type === "checkbox" ? el.checked : el.type === "number" ? +el.value : el.value; store.set(g === "samp" ? "rc_samp2" : "rc_" + g, S[g]); if (k === "avoidKelp") buildFree();
-    if (k === "minPer") { S.route.stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = (+x.rep || 1) * S.samp.minPer / 60; }); dirty(); toast(`Sampling stops re-timed: ${S.samp.minPer} min per sample.`); }
+    if (k === "minPer") { S.route.stops.forEach(x => { if (isMid(x) && x.kind === "sample" && !isUW(x)) x.dwell = sampMin(x) / 60; }); dirty(); toast(`Sampling stops re-timed: ${S.samp.minPer} min per sample.`); }
     if (g !== "contacts") render(); }; });
 
 // ---------- layers ----------
